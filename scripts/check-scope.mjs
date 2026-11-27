@@ -5,10 +5,8 @@
 // at run time; this catches them before then.   npm run check:scope   (exits 1 while any are left)
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { PERSONAL, SYSTEM_TABLES } from "./tables.mjs";
 
-const PERSONAL = ["notes", "actions", "links", "comments", "changes", "study", "memories", "chats", "push_subs", "push_sent",
-  "push_snooze", "prefs", "embeddings", "inbox", "prompts", "routines", "thread", "study_subjects", "study_pages", "study_sets",
-  "study_sessions", "study_exams", "study_exam_pages", "study_misses", "agent_approvals"];
 const table = /\b(?:FROM|INTO|UPDATE|JOIN)\s+(?:main\.)?["`[]?([a-z_]+)\b/g;
 const ok = /\{owner\}|any-owner|scope-ok/;
 const dir = "src/worker";
@@ -23,6 +21,13 @@ for (const f of readdirSync(dir).filter((x) => x.endsWith(".ts"))) {
     (byFile[f] ??= []).push(i + 1);
   });
 }
+// Every table a migration makes must be in one of the two lists in src/worker/scope.ts.
+const made = new Set();
+for (const f of readdirSync("migrations").filter((x) => x.endsWith(".sql"))) {
+  for (const m of readFileSync(join("migrations", f), "utf8").matchAll(/CREATE TABLE (?:IF NOT EXISTS )?([a-z_]+)/g)) if (!m[1].endsWith("_new")) made.add(m[1]);
+}
+const unlisted = [...made].filter((t) => !PERSONAL.includes(t) && !SYSTEM_TABLES.includes(t));
+if (unlisted.length) { console.log(`tables in neither PERSONAL nor SYSTEM_TABLES (src/worker/scope.ts): ${unlisted.join(", ")}`); left += unlisted.length; }
 for (const [f, lines] of Object.entries(byFile).sort((a, b) => b[1].length - a[1].length)) {
   console.log(`${String(lines.length).padStart(4)}  ${f}  (lines ${lines.slice(0, 12).join(", ")}${lines.length > 12 ? ", …" : ""})`);
 }

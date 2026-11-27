@@ -141,3 +141,13 @@ saved HTML (checked by the API suite) does contain the toggle.
 With the dev server running: `npm i --no-save playwright`, then
 `node scripts/shoot.cjs page "#/p/<id>" 1440 900 dark` (saves to `shots/`, which is gitignored).
 In Git Bash, run `export MSYS_NO_PATHCONV=1` first, otherwise `#/p/...` gets rewritten as a Windows path.
+
+## Upgrading a real copy
+
+```powershell
+node tests/upgrade/run.mjs v0.2.0   # the last release's tag
+```
+Runs that release on a fresh database (a temporary git worktree), makes data through its own API (`tests/upgrade/seed.py`),
+applies this checkout's migrations to the same database, then checks the old owner's pages, settings, saved prompt,
+memory, conversation, capture key and shared page still work (`check.py`). Run it before releasing anything with a new
+migration: migrations on `main` are append-only. Needs Python 3 and port 5175.

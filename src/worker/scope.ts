@@ -8,6 +8,9 @@
 export const PERSONAL = ["notes", "actions", "links", "comments", "changes", "study", "memories", "chats", "push_subs", "push_sent",
   "push_snooze", "prefs", "embeddings", "inbox", "prompts", "routines", "thread", "study_subjects", "study_pages", "study_sets",
   "study_sessions", "study_exams", "study_exam_pages", "study_misses", "agent_approvals"];
+/** Tables that belong to the whole copy, not to one person. Every table is in exactly one of the two lists (npm run
+ *  check:scope fails on a table in neither, so a new one can't slip past both guards). */
+export const SYSTEM_TABLES = ["users", "sessions", "login_attempts", "invites"];
 // A table name may be quoted ("notes", `notes`, [notes]) or carry its schema (main.notes).
 const TOUCHES = new RegExp(String.raw`\b(?:FROM|INTO|UPDATE|JOIN|TABLE)\s+(?:main\.)?["\x60\[]?(?:${PERSONAL.join("|")})["\x60\]]?(?![\w])`, "i");
 const ID = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|dev|)$/;

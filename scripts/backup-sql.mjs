@@ -7,6 +7,8 @@
 // with UPDATE ... || '...' pieces on the row just inserted (last_insert_rowid()). Search-by-meaning vectors aren't in a
 // backup and would be stale after a restore, so they're cleared and the cron rebuilds them.
 
+import { PERSONAL } from "./tables.mjs";
+
 export const MAX_STATEMENT = 90_000; // bytes, under D1's 100 KB limit
 const PIECE = 10_000; // characters per appended piece: at most 40 KB even if every one is 4 bytes
 
@@ -66,10 +68,7 @@ export function toSql(dump, { max = MAX_STATEMENT, clear = ["embeddings"] } = {}
 
 // Seaglass Open 0.2 gave every personal row an owner (migration 0023). A backup made before that has none, so after
 // restoring it into a 0.2 database its rows go to the first account, exactly as the migration did; the household-wide
-// settings stay shared. Keep this list in step with src/worker/scope.ts PERSONAL.
-const PERSONAL = ["notes", "actions", "links", "comments", "changes", "study", "memories", "chats", "push_subs", "push_sent",
-  "push_snooze", "prefs", "embeddings", "inbox", "prompts", "routines", "thread", "study_subjects", "study_pages", "study_sets",
-  "study_sessions", "study_exams", "study_exam_pages", "study_misses", "agent_approvals"];
+// settings stay shared. Which tables are personal comes from src/worker/scope.ts.
 const SHARED_PREFS = ["household", "backup_status", "vault_sealed_kid", "changes_pruned_through"];
 /** True for a backup made before rows had owners. */
 export const beforeOwners = (dump) => PERSONAL.some((t) => Array.isArray(dump.tables?.[t]) && dump.tables[t].length > 0 && !("owner_id" in dump.tables[t][0]));
