@@ -15,6 +15,7 @@ import "./chat.css";
 import "./study.css";
 import "./calendar.css";
 import "./welcome.css";
+import "./onboarding.css";
 import "./live.css";
 import { initGlass } from "./glass";
 

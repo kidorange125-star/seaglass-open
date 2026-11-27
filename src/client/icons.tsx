@@ -15,7 +15,7 @@ import type { PropType, ViewType } from "./types";
 // The Seaglass mark (logo.ts holds its shapes and colours; `npm run icons` redraws the favicon, app icons and boot screen).
 export function Logo({ size = 28 }: { size?: number }) {
   const id = `lg${useId().replace(/:/g, "")}`;
-  return <svg className="logo" width={size} height={size} viewBox="0 0 64 64" aria-hidden dangerouslySetInnerHTML={{ __html: logoSvg(id) }} />;
+  return <svg className="logo" width={size} height={size} style={{ width: size, height: size }} viewBox="0 0 64 64" aria-hidden dangerouslySetInnerHTML={{ __html: logoSvg(id) }} />;
 }
 
 /** The assistant's face at small sizes (sidebar, buttons, search). Seaglass Open's assistant is Waffle, drawn in code. */

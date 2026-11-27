@@ -32,7 +32,8 @@ import { Home, Trash } from "./components/Views";
 import { TasksView } from "./components/Tasks";
 import { Dialogs } from "./components/ui";
 import { bootDone } from "./boot";
-import { SetupWizard, SignIn } from "./components/Welcome";
+import { SignIn } from "./components/Welcome";
+import { Onboarding } from "./components/Onboarding";
 import { setMe } from "./me";
 import { CalendarView } from "./components/CalendarView";
 
@@ -167,7 +168,7 @@ export function App() {
   useEffect(() => { setUnauthorizedHandler(() => setView("signin")); void check(); }, []);
   useEffect(() => { if (view === "setup" || view === "signin") bootDone(); }, [view]);
   if (view === "loading") return null;
-  if (view === "setup") return <SetupWizard codeRequired={codeRequired} noTables={noTables} onDone={() => void check()} />;
+  if (view === "setup") return <Onboarding codeRequired={codeRequired} noTables={noTables} onDone={() => void check()} />;
   if (view === "signin") return <SignIn onDone={() => void check()} />;
   return <StoreProvider><Shell /></StoreProvider>;
 }

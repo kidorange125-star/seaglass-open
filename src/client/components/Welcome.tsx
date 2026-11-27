@@ -51,9 +51,9 @@ export function SignIn({ onDone }: { onDone: () => void }) {
 
 type Mode = "individual" | "household";
 
-export function SetupWizard({ codeRequired, noTables = false, onDone }: { codeRequired: boolean; noTables?: boolean; onDone: () => void }) {
+export function SetupWizard({ codeRequired, noTables = false, initialMode, onDone, onBack }: { codeRequired: boolean; noTables?: boolean; initialMode?: "individual" | "household"; onDone: () => void; onBack?: () => void }) {
   const [step, setStep] = useState<1 | 2>(1);
-  const [mode, setMode] = useState<Mode | null>(null);
+  const [mode, setMode] = useState<Mode | null>(initialMode ?? null);
   const [code, setCode] = useState("");
   const [home, setHome] = useState("");
   const [name, setName] = useState("");
@@ -103,7 +103,10 @@ export function SetupWizard({ codeRequired, noTables = false, onDone }: { codeRe
             </button>
           </div>
           <p className="w-note">You can change this later in Settings.</p>
-          <button className="primary" disabled={!mode} onClick={() => setStep(2)}>Continue</button>
+          <div className="w-actions">
+            {onBack && <button type="button" className="ghost" onClick={onBack}>Back</button>}
+            <button className="primary" disabled={!mode} onClick={() => setStep(2)}>Continue</button>
+          </div>
         </>
       ) : (
         <form onSubmit={(e) => { e.preventDefault(); void finish(); }} className="w-form">

@@ -21,7 +21,10 @@ This is **Seaglass Open**, the open-source edition, released under the [Apache L
   assistant's.
 - **Connect Claude** to your notes over MCP (Claude Desktop, claude.ai, Claude Code), with an account sign-in.
 - **Works on your phone**: installs as an app, works offline, sends task reminders.
-- **Accounts**: a username and password; setup asks whether this Seaglass is just for you or for a household.
+- **You decide what the assistant may do**: each kind of action (adding, editing, trashing, memory, routines, web) is Allow,
+  Ask or Never. By default Waffle asks before it changes anything, with Approve and Don't right in the chat.
+- **A first visit you can try before setting anything up**: write a first page, take a quick quiz, meet Waffle, then make
+  your account (username and password; just you or a household).
 
 ## What's not in it yet
 
