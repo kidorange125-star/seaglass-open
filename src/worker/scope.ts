@@ -13,7 +13,8 @@ export const PERSONAL = ["notes", "actions", "links", "comments", "changes", "st
 export const SYSTEM_TABLES = ["users", "sessions", "login_attempts", "invites", "person_rules"];
 // A table name may be quoted ("notes", `notes`, [notes]) or carry its schema (main.notes).
 const TOUCHES = new RegExp(String.raw`\b(?:FROM|INTO|UPDATE|JOIN|TABLE)\s+(?:main\.)?["\x60\[]?(?:${PERSONAL.join("|")})["\x60\]]?(?![\w])`, "i");
-const ID = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|dev|)$/;
+// A person's id, the test user "dev", the shared Family space ("family", src/shared/space.ts), or '' for the household.
+const ID = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|dev|family|)$/;
 
 export class ScopeError extends Error {}
 

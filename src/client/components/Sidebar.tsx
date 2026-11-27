@@ -1,4 +1,6 @@
 import { createPortal } from "react-dom";
+import { inFamily, spaceHref, spaceKey } from "../space";
+import { homeName, isHousehold } from "../me";
 import { useMemo, useRef, useState, type ReactElement } from "react";
 import { MovePicker } from "./MovePicker";
 import { EDITION } from "../edition";
@@ -32,7 +34,7 @@ export function Sidebar() {
   const personaId = usePersona();
   const unread = useUnread();
   const s = useStore();
-  const [open, setOpen] = useState<Set<string>>(() => readSet("sg.open"));
+  const [open, setOpen] = useState<Set<string>>(() => readSet(spaceKey("sg.open")));
   const [closedSections, setClosedSections] = useState<Set<string>>(() => readSet("sg.sections"));
   const [drop, setDrop] = useState<{ id: string; zone: Zone } | null>(null);
   const [settings, setSettings] = useState<null | "top" | "foot">(null);
@@ -48,7 +50,7 @@ export function Sidebar() {
 
   const toggle = (id: string, force?: boolean) => setOpen((o) => {
     const n = new Set(o); (force ?? !n.has(id)) ? n.add(id) : n.delete(id);
-    writeSet("sg.open", n); return n;
+    writeSet(spaceKey("sg.open"), n); return n;
   });
   const toggleSection = (k: string) => setClosedSections((o) => { const n = new Set(o); n.has(k) ? n.delete(k) : n.add(k); writeSet("sg.sections", n); return n; });
   const afterNav = () => { if (isMobile()) s.toggleSidebar(); };
@@ -138,6 +140,15 @@ export function Sidebar() {
   };
   const settingsMenu = (where: "top" | "foot") => settings === where && (
     <Popover onClose={() => setSettings(null)} className={`settings-pop ${where}`}>
+      {isHousehold() && <>
+        <div className="mp-title">Space</div>
+        <div className="seg spaces" role="radiogroup" aria-label="Space">
+          <button role="radio" aria-checked={!inFamily} className={!inFamily ? "on" : ""} onClick={() => { if (inFamily) location.href = spaceHref(false); }}>Mine</button>
+          <button role="radio" aria-checked={inFamily} className={inFamily ? "on" : ""} onClick={() => { if (!inFamily) location.href = spaceHref(true); }}>{homeName()}</button>
+        </div>
+        <small className="mp-note">{inFamily ? "Shared with everyone in the household: pages, tasks and the calendar." : "Only you can see your space."}</small>
+        <div className="mp-sep" />
+      </>}
       <div className="mp-title">Theme</div>
       <div className="seg">{(["system", "light", "dark"] as const).map((t) => <button key={t} className={s.theme === t ? "on" : ""} onClick={() => s.setTheme(t)}>{t}</button>)}</div>
       <div className="mp-title">Liquid Glass</div>
@@ -183,7 +194,7 @@ export function Sidebar() {
     <aside className="sidebar">
       <div className="sb-top">
         <span className="rel ws-wrap">
-          <button className="ws" onClick={() => setSettings(settings === "top" ? null : "top")}><Logo size={22} /> <span className="ws-name">Seaglass</span> <span className="ws-chev"><IChevronsUpDown size={16} /></span></button>
+          <button className="ws" onClick={() => setSettings(settings === "top" ? null : "top")}><Logo size={22} /> <span className="ws-name">{inFamily ? homeName() : "Seaglass"}</span> <span className="ws-chev"><IChevronsUpDown size={16} /></span></button>
           {settingsMenu("top")}
         </span>
         <button className="ghost icon-btn sb-collapse" title="Close sidebar (Ctrl+\)" onClick={s.toggleSidebar}><ICollapse size={20} /></button>
@@ -191,15 +202,15 @@ export function Sidebar() {
       <div className="sb-nav">
         <button className="sb-btn" title="Search (Ctrl+K)" onClick={() => { s.setPaletteOpen(true); }}><ISearch size={S} /> Search <kbd>Ctrl K</kbd></button>
         <a className={`sb-btn ${s.route.kind === "home" ? "active" : ""}`} href="#/" onClick={afterNav}><IHome size={S} /> Home</a>
-        <a className={`sb-btn ${s.route.kind === "tasks" ? "active" : ""}`} href="#/tasks" onClick={afterNav}><ICheckSquare size={S} /> My tasks {due > 0 && <span className="sb-count" title={`${due} due today or earlier`}>{due}</span>}</a>
+        <a className={`sb-btn ${s.route.kind === "tasks" ? "active" : ""}`} href="#/tasks" onClick={afterNav}><ICheckSquare size={S} /> {inFamily ? "Family tasks" : "My tasks"} {due > 0 && <span className="sb-count" title={`${due} due today or earlier`}>{due}</span>}</a>
           {EDITION.calendar && <a className={`sb-btn ${s.route.kind === "calendar" ? "active" : ""}`} href="#/calendar" onClick={afterNav}><ICalendar size={S} /> Calendar</a>}
-        <a className={`sb-btn ${s.route.kind === "study" ? "active" : ""}`} href="#/study" onClick={afterNav}><IStudy size={S} /> Study</a>
-        <button className={`sb-btn ${s.agentOpen ? "active" : ""}`} title={`Ask ${agentName()} (Ctrl+J)`} onClick={() => { s.setAgentOpen(!s.agentOpen); afterNav(); }}><span className="sb-jeff"><JeffFace size={19} /></span> {agentName()}{unread > 0 && <span className="sb-badge" title={`${unread} new from ${agentName()}`}>{unread}</span>}</button>
+        {!inFamily && <a className={`sb-btn ${s.route.kind === "study" ? "active" : ""}`} href="#/study" onClick={afterNav}><IStudy size={S} /> Study</a>}
+        {!inFamily && <button className={`sb-btn ${s.agentOpen ? "active" : ""}`} title={`Ask ${agentName()} (Ctrl+J)`} onClick={() => { s.setAgentOpen(!s.agentOpen); afterNav(); }}><span className="sb-jeff"><JeffFace size={19} /></span> {agentName()}{unread > 0 && <span className="sb-badge" title={`${unread} new from ${agentName()}`}>{unread}</span>}</button>}
       </div>
       <div className="sb-scroll">
         {favorites.length > 0 && section("fav", "Favorites", <>{favorites.map((n) => renderRow(n, 0, "fav:"))}</>)}
         {recents.length > 0 && section("recent", "Recents", <>{recents.map((n) => renderRow(n, 0, "rec:"))}</>)}
-        {section("private", "Private", <>
+        {section("private", inFamily ? "Shared pages" : "Private", <>
           {(showAll ? roots : roots.slice(0, PRIVATE_LIMIT)).map((n) => renderRow(n, 0))}
           {roots.length > PRIVATE_LIMIT && (
             <div className="row more-row" style={{ paddingLeft: 4 }} onClick={() => setShowAll((v) => { try { localStorage.setItem("sg.private.all", v ? "0" : "1"); } catch { /* ignore */ } return !v; })}>
@@ -227,7 +238,7 @@ export function Sidebar() {
         <a className={`sb-btn ${s.route.kind === "trash" ? "active" : ""}`} href="#/trash" onClick={afterNav}><ITrash size={S} /> Trash</a>
       </div>
       <div className="sb-chat">
-        <button className="sb-newchat" title={`Talk to ${agentName()} (Ctrl+J)`} onClick={() => { s.setAgentOpen(true); afterNav(); }}><JeffFace size={18} /> Ask {agentName()} <kbd>Ctrl J</kbd></button>
+        {!inFamily && <button className="sb-newchat" title={`Talk to ${agentName()} (Ctrl+J)`} onClick={() => { s.setAgentOpen(true); afterNav(); }}><JeffFace size={18} /> Ask {agentName()} <kbd>Ctrl J</kbd></button>}
         <button className="sb-compose" title="New page (Ctrl+Alt+N)" onClick={async () => { await s.newPage(); afterNav(); }}><ICompose size={20} /></button>
       </div>
       <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={(e) => { setSettings(null); void restoreInput(e.target.files?.[0]); }} />

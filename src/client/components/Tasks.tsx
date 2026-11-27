@@ -1,5 +1,6 @@
 // The built-in to-do list ("My tasks"), modelled on Notion's My Tasks. It's an ordinary database underneath
 // (created by the server, see ensureTasksDb), so Jeff, Claude, undo and sync all work on it as usual.
+import { inFamily } from "../space";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { useStore } from "../store";
@@ -318,7 +319,7 @@ export function TasksView() {
   return (
     <div className="page tasks-page">
       <div className="topbar">
-        <div className="crumbs"><span className="cur"><ICheckSquare size={16} /> My tasks</span></div>
+        <div className="crumbs"><span className="cur"><ICheckSquare size={16} /> {inFamily ? "Family tasks" : "My tasks"}</span></div>
         <div className="actions" />
       </div>
       <div className="scroll">
@@ -336,7 +337,7 @@ export function TasksView() {
               <button className="ghost" onClick={() => void setCover(randomCover())}><IImage size={18} /> Add cover</button>
             </div>
           )}
-          <h1 className="title tasks-title">My tasks</h1>
+          <h1 className="title tasks-title">{inFamily ? "Family tasks" : "My tasks"}</h1>
           <div className="tasks-bar">
             <div className="tabs">
               <button className={`tab ${tab === "todo" ? "on" : ""}`} onClick={() => setTab("todo")}><ICheckSquare size={16} /> To do</button>

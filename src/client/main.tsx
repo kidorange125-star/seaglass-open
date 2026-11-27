@@ -1,3 +1,6 @@
+// First: in the Family space, page requests must go to it before anything fetches (space.ts).
+import { installSpaceFetch } from "./space";
+installSpaceFetch();
 import "@fontsource-variable/jetbrains-mono";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";

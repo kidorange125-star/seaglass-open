@@ -3,12 +3,13 @@
 // while offline are kept in a durable queue on this device and sent when the connection is back. If a page was
 // changed somewhere else in the meantime, the offline edit is never thrown away or allowed to overwrite: it is
 // saved as a copy page ("… (offline edit)") next to the original.
+import { spaceKey } from "./space";
 import { flushSessions, OFFLINE_KEYS, queuedSessions } from "./study/offline";
 import { api, Conflict } from "./api";
 
 export class OfflineQueued extends Error { constructor() { super("saved offline"); } }
 
-const KEY = "sg.offline.queue";
+const KEY = spaceKey("sg.offline.queue"); // one queue per space, so an edit is never replayed into the other
 export interface Queued { id: string; patch: Record<string, unknown>; revision?: number; at: number }
 
 const read = (): Queued[] => { try { return JSON.parse(localStorage.getItem(KEY) ?? "[]") as Queued[]; } catch { return []; } };
