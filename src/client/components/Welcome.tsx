@@ -69,7 +69,7 @@ export function JoinHousehold({ code: initial, onDone, onBack }: { code: string;
   };
   useEffect(() => { if (initial) void checkCode(initial); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const mismatch = again.length > 0 && again !== password;
-  const ready = !!ok && name.trim() && username.trim() && password.length >= 10 && again === password;
+  const ready = !!ok && name.trim() && username.trim() && password.length >= 6 && again === password;
   const place = ok?.household ? ok.household : "this Seaglass";
 
   if (!ok) return (
@@ -97,7 +97,7 @@ export function JoinHousehold({ code: initial, onDone, onBack }: { code: string;
       <p>{ok.invited_by ? `${ok.invited_by} invited you. ` : ""}You get your own account: your notes, tasks, study and assistant are yours, and nobody else in the household can see them.</p>
       <Field label="Your name" hint="What the assistant calls you.">{(id, h) => <input id={id} aria-describedby={h} autoFocus autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} />}</Field>
       <Field label="Username" hint="For signing in. Letters, numbers, dots, dashes.">{(id, h) => <input id={id} aria-describedby={h} autoComplete="username" autoCapitalize="none" spellCheck={false} value={username} onChange={(e) => setUsername(e.target.value)} aria-invalid={err?.field === "username"} />}</Field>
-      <Field label="Password" hint="10 characters or more.">{(id, h) => <input id={id} aria-describedby={h} type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={err?.field === "password"} />}</Field>
+      <Field label="Password" hint="6 characters or more.">{(id, h) => <input id={id} aria-describedby={h} type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={err?.field === "password"} />}</Field>
       <Field label="Password again" hint={mismatch ? "These don't match yet." : undefined}>{(id, h) => <input id={id} aria-describedby={h} type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} aria-invalid={mismatch} />}</Field>
       {err && <p className="err" role="alert">{err.text}</p>}
       <button className="primary" disabled={busy || !ready}>{busy ? "Making your account…" : "Join"}</button>
@@ -120,7 +120,7 @@ export function SetupWizard({ codeRequired, noTables = false, initialMode, onDon
   const [busy, setBusy] = useState(false);
 
   const mismatch = again.length > 0 && again !== password;
-  const ready = !!mode && name.trim() && username.trim() && password.length >= 10 && again === password && (!codeRequired || code.trim());
+  const ready = !!mode && name.trim() && username.trim() && password.length >= 6 && again === password && (!codeRequired || code.trim());
 
   const finish = async () => {
     if (!ready || busy || !mode) return;
@@ -175,7 +175,7 @@ export function SetupWizard({ codeRequired, noTables = false, initialMode, onDon
           )}
           <Field label={<>Your name</>} hint={<>What Waffle calls you.</>}>{(id, h) => <input id={id} autoFocus={!codeRequired && mode !== "household"} autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} aria-describedby={h} />}</Field>
           <Field label={<>Username</>}>{(id) => <input id={id} autoComplete="username" autoCapitalize="none" spellCheck={false} value={username} onChange={(e) => setUsername(e.target.value)} aria-invalid={err?.field === "username"} />}</Field>
-          <Field label={<>Password</>} hint={<>At least 10 characters.</>}>{(id, h) => <input id={id} type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={err?.field === "password"} aria-describedby={h} />}</Field>
+          <Field label={<>Password</>} hint={<>At least 6 characters.</>}>{(id, h) => <input id={id} type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={err?.field === "password"} aria-describedby={h} />}</Field>
           <Field label={<>Password again</>} hint={mismatch ? <span className="err" role="alert">The passwords don't match.</span> : undefined}>{(id, h) => <input id={id} type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} aria-invalid={mismatch} aria-describedby={h} />}</Field>
           {err && <p className="err" role="alert">{err.text}</p>}
           <div className="w-actions">

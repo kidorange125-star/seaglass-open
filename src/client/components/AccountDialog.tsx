@@ -58,8 +58,8 @@ export function AccountDialog({ onClose }: { onClose: () => void }) {
               <h3>Password</h3>
               <form className="acc-pw" onSubmit={(e) => { e.preventDefault(); void run("pw", () => api.changePassword(cur, next), "Password changed. Other devices were signed out.").then((ok) => { if (ok) { setCur(""); setNext(""); } }); }}>
                 <input type="password" placeholder="Current password" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} aria-label="Current password" />
-                <input type="password" placeholder="New password (10+ characters)" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} aria-label="New password" />
-                <button className="primary" disabled={!cur || next.length < 10 || busy === "pw"}>Change password</button>
+                <input type="password" placeholder="New password (6+ characters)" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} aria-label="New password" />
+                <button className="primary" disabled={!cur || next.length < 6 || busy === "pw"}>Change password</button>
               </form>
               <button className="ghost acc-link" disabled={busy === "out"} onClick={() => void run("out", () => api.signOutEverywhere(), "Signed out on every other device")}>Sign out on every other device</button>
             </section>
