@@ -15,7 +15,8 @@
     "push:keygen": "node scripts/push-keygen.mjs",
     "data:keygen": "node scripts/data-keygen.mjs",
     "voice:model": "node scripts/voice-model.mjs",
-    "backup:restore": "node scripts/restore-backup.mjs"
+    "backup:restore": "node scripts/restore-backup.mjs",
+    "check:scope": "node scripts/check-scope.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
