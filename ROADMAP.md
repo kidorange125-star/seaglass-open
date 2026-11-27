@@ -28,9 +28,14 @@ What's planned for Seaglass Open, roughly in order. Nothing here exists yet unle
   notifications no longer need a key made on the command line.
 - Passwords need at least 6 characters.
 
-## 0.2.x: households, continued
+## 0.2.3: sharing a page with someone (done)
 
-- Sharing a page or folder with one person (view, comment or edit).
+- Share a page and its sub-pages with one person in the household, to view or to edit (a page's Share menu > People).
+  They find it under "Shared with me" and see nothing else of yours; edits show who made them in version history.
+
+## Later in 0.2.x
+
+- A comment-only level once comments say who wrote them; reminders for Family tasks.
 
 ## 0.3: your own AI keys
 
