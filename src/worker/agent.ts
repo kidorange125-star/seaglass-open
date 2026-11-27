@@ -256,7 +256,7 @@ async function pageView(db: D1Database, n: N.Note, ctx: N.Ctx, schemas?: Map<str
   if (n.parent_id) {
     let schema = schemas?.get(n.parent_id);
     if (schema === undefined) {
-      const parent = await db.prepare("SELECT kind, db_schema FROM notes WHERE id = ?").bind(n.parent_id).first<{ kind: string; db_schema: string | null }>();
+      const parent = await db.prepare("SELECT kind, db_schema FROM notes WHERE owner_id = {owner} AND (id = ?)").bind(n.parent_id).first<{ kind: string; db_schema: string | null }>();
       schema = parent?.kind === "database" ? parseSchema(await Vault.open("notes", n.parent_id, "db_schema", parent.db_schema)) : null;
       schemas?.set(n.parent_id, schema);
     }
@@ -454,7 +454,7 @@ async function runToolUnguarded(db: D1Database, name: string, input: unknown, ct
       const paged = ["updated_since", "cursor", "limit", "all"].some((k) => a[k] !== undefined);
       if (!paged) {
         // The original shape: a plain array of every child (now with the sync fields).
-        const kids = (await N.openNotes((await db.prepare(`SELECT n.* FROM notes n LEFT JOIN notes p ON p.id = n.parent_id WHERE ${where} ORDER BY n.position, n.created_at LIMIT 2000`).bind(...binds).all<N.Note>()).results as unknown as Record<string, unknown>[])) as unknown as N.Note[];
+        const kids = (await N.openNotes((await db.prepare(`SELECT n.* FROM notes n LEFT JOIN notes p ON p.owner_id = {owner} AND p.id = n.parent_id WHERE n.owner_id = {owner} AND (${where}) ORDER BY n.position, n.created_at LIMIT 2000`).bind(...binds).all<N.Note>()).results as unknown as Record<string, unknown>[])) as unknown as N.Note[];
         return done(await Promise.all(kids.map(pageItem)), pid ? `Listed sub-pages · ${kids.length}` : `Listed top-level pages · ${kids.length}`);
       }
       const server_time = Sy.iso(Date.now());
@@ -586,7 +586,7 @@ async function runToolUnguarded(db: D1Database, name: string, input: unknown, ct
       if (!Array.isArray(a.ids) || !a.ids.length) throw new ToolError('"ids" must be a non-empty array of page ids');
       if (a.ids.length > 50) throw new ToolError("At most 50 ids per call");
       const ids = [...new Set(a.ids.map((x) => { if (typeof x !== "string" || !UUID.test(x)) throw new ToolError(`"${String(x).slice(0, 40)}" is not a valid page id`); return x; }))];
-      const found = new Map(((await N.openNotes((await db.prepare(`SELECT * FROM notes WHERE id IN (${ids.map(() => "?").join(",")})`).bind(...ids).all<N.Note>()).results as unknown as Record<string, unknown>[])) as unknown as N.Note[]).map((n) => [n.id, n]));
+      const found = new Map(((await N.openNotes((await db.prepare(`SELECT * FROM notes WHERE owner_id = {owner} AND (id IN (${ids.map(() => "?").join(",")}))`).bind(...ids).all<N.Note>()).results as unknown as Record<string, unknown>[])) as unknown as N.Note[]).map((n) => [n.id, n]));
       const schemas = new Map<string, DbSchema | null>();
       const pages: unknown[] = [], not_found: string[] = [], omitted_ids: string[] = [];
       let size = 0;
@@ -606,8 +606,8 @@ async function runToolUnguarded(db: D1Database, name: string, input: unknown, ct
       const limit = intIn(a, "limit", 100, 500);
       const server_time = Sy.iso(Date.now());
       const rows = (await N.openNotes((await db.prepare(
-        `SELECT n.*, (p.id IS NULL OR p.deleted_at IS NULL OR p.deleted_at != n.deleted_at) AS trash_root FROM notes n LEFT JOIN notes p ON p.id = n.parent_id
-         WHERE n.deleted_at IS NOT NULL ORDER BY n.deleted_at DESC, n.id LIMIT ? OFFSET ?`,
+        `SELECT n.*, (p.id IS NULL OR p.deleted_at IS NULL OR p.deleted_at != n.deleted_at) AS trash_root FROM notes n LEFT JOIN notes p ON p.owner_id = {owner} AND p.id = n.parent_id
+         WHERE n.owner_id = {owner} AND (n.deleted_at IS NOT NULL) ORDER BY n.deleted_at DESC, n.id LIMIT ? OFFSET ?`,
       ).bind(limit + 1, offset).all<N.Note & { trash_root: number }>()).results as unknown as Record<string, unknown>[])) as unknown as (N.Note & { trash_root: number })[];
       const items = rows.slice(0, limit);
       return done({ pages: items.map((n) => ({ ...light(n), ...Sy.syncFields(n), trash_root: !!n.trash_root })), next_cursor: rows.length > limit ? Sy.encodeCursor({ o: offset + limit }) : null, server_time }, `Listed the trash · ${items.length}`);
@@ -802,7 +802,7 @@ export async function runAgent(env: Env, p: AgentParams, send: (e: AgentEvent) =
   const model = p.voice || p.quick ? "claude-haiku-5-5" : pickModel(p.model);
   const PRICE = MODELS[model].price, SPEED_COST = p.fast ? 2 : 1;
   // The user can pick Waffle instead of Waffle in Settings: same assistant and tools, Waffle's name and its own few lines (persona.ts).
-  const persona = (await env.DB.prepare("SELECT value FROM prefs WHERE key = 'persona'").first<{ value: string }>())?.value;
+  const persona = (await env.DB.prepare("SELECT value FROM prefs WHERE owner_id = {owner} AND (key = 'persona')").first<{ value: string }>())?.value;
   const call = mode === "mock" ? mockModel() : realModel(claudeClient(env), model, p.web !== false && !p.quick && (await Approvals.permissions(env.DB, Approvals.startingPoint(env))).web !== "never", systemFor(SYSTEM, persona), { voice: p.voice, fast: p.fast, quick: p.quick });
   // Which agent this is, on every change it makes: "Waffle (Sonnet 5.5)", "Waffle (Haiku 5.5, live voice)"… (identity.ts)
   const agent = agentLabel(persona, [`${modelName(model)}${p.fast ? " Fast" : ""}`, p.via, p.voice && "live voice", p.handoff && "for live voice", p.quick && "Ctrl+K", !!p.study?.ids.length && "Study chat"]);

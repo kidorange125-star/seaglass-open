@@ -13,7 +13,7 @@ export function modelName(id: string) {
 export const assistantName = (_persona?: string | null) => "Waffle";
 
 export async function personaOf(db: D1Database) {
-  return (await db.prepare("SELECT value FROM prefs WHERE key = 'persona'").first<{ value: string }>())?.value ?? null;
+  return (await db.prepare("SELECT value FROM prefs WHERE owner_id = {owner} AND (key = 'persona')").first<{ value: string }>())?.value ?? null;
 }
 
 /** "Waffle (Sonnet 5.5, routine "Morning brief")": the name, then whatever is known, in order. */

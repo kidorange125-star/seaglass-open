@@ -233,8 +233,8 @@ export async function sourceText(db: D1Database, ids: string[], depth = 3) {
   let out = "";
   for (const id of visible.slice(0, 20)) {
     const rows = (await db.prepare(
-      `WITH RECURSIVE d(id, depth) AS (SELECT ?1, 0 UNION ALL SELECT n.id, d.depth + 1 FROM notes n JOIN d ON n.parent_id = d.id WHERE d.depth < ?2)
-       SELECT n.id, n.title, n.text FROM d JOIN notes n ON n.id = d.id WHERE n.deleted_at IS NULL AND n.id NOT IN (${HIDDEN_SQL}) LIMIT 60`,
+      `WITH RECURSIVE d(id, depth) AS (SELECT ?1, 0 UNION ALL SELECT n.id, d.depth + 1 FROM notes n JOIN d ON n.parent_id = d.id WHERE n.owner_id = {owner} AND (d.depth < ?2))
+       SELECT n.id, n.title, n.text FROM d JOIN notes n ON n.owner_id = {owner} AND n.id = d.id WHERE n.deleted_at IS NULL AND n.id NOT IN (${HIDDEN_SQL}) LIMIT 60`,
     ).bind(id, depth).all<{ id: string; title: string; text: string }>()).results;
     for (const r of rows) out += `\n\n## ${(await Vault.open("notes", r.id, "title", r.title)) || "Untitled"}\n${blankMentions((await Vault.open("notes", r.id, "text", r.text)) ?? "", r.id, hidden)}`;
     if (out.length > 60_000) break;
@@ -283,7 +283,7 @@ export async function studySet(env: Env, o: { ids: string[]; mode: SetMode; fres
   const fresh = o.fresh || !!o.change; // a changed set replaces the saved one, so it's what the user plays from now on
   const id = await sha256(`${o.mode}|${ids.join(",")}`), source = await sha256(text);
   let past: string[] = [];
-  const row = await db.prepare("SELECT data, created_at FROM study_sets WHERE id = ?").bind(id).first<{ data: string; created_at: number }>();
+  const row = await db.prepare("SELECT data, created_at FROM study_sets WHERE owner_id = {owner} AND (id = ?)").bind(id).first<{ data: string; created_at: number }>();
   if (row) {
     try {
       const saved = JSON.parse((await Vault.open("study_sets", id, "data", row.data)) ?? "null") as { source: string; set: StudySet } | null;
@@ -299,8 +299,8 @@ export async function studySet(env: Env, o: { ids: string[]; mode: SetMode; fres
   if (!playable(set)) throw new ToolError("Claude didn't return usable questions. Try again.");
   const now = Date.now();
   await db.batch([
-    db.prepare("INSERT OR REPLACE INTO study_sets (id, mode, data, created_at) VALUES (?,?,?,?)").bind(id, o.mode, await Vault.seal("study_sets", id, "data", JSON.stringify({ source, set })), now),
-    db.prepare("DELETE FROM study_sets WHERE created_at < ?").bind(now - SET_MAX_AGE),
+    db.prepare("INSERT INTO study_sets (owner_id, id, mode, data, created_at) VALUES ({owner}, ?,?,?,?) ON CONFLICT(id) DO UPDATE SET mode = excluded.mode, data = excluded.data, created_at = excluded.created_at WHERE study_sets.owner_id = excluded.owner_id").bind(id, o.mode, await Vault.seal("study_sets", id, "data", JSON.stringify({ source, set })), now),
+    db.prepare("DELETE FROM study_sets WHERE owner_id = {owner} AND (created_at < ?)").bind(now - SET_MAX_AGE),
   ]);
   return { ...set, cached: false, created_at: now };
 }

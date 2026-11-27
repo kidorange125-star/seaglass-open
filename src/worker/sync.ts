@@ -66,11 +66,11 @@ export async function pageOfNotes(db: D1Database, opts: { where: string; binds: 
       where += " AND (n.updated_at > ? OR (n.updated_at = ? AND n.id > ?))";
       binds.push(opts.cursor.u, opts.cursor.u, opts.cursor.i);
     }
-    sql = `SELECT ${cols} FROM notes n LEFT JOIN notes p ON p.id = n.parent_id WHERE ${where} ORDER BY n.updated_at, n.id LIMIT ?`;
+    sql = `SELECT ${cols} FROM notes n LEFT JOIN notes p ON p.owner_id = {owner} AND p.id = n.parent_id WHERE n.owner_id = {owner} AND (${where}) ORDER BY n.updated_at, n.id LIMIT ?`;
     binds.push(opts.limit + 1);
   } else {
     const offset = Math.max(0, Math.floor(opts.cursor?.o ?? 0));
-    sql = `SELECT ${cols} FROM notes n LEFT JOIN notes p ON p.id = n.parent_id WHERE ${opts.where} ORDER BY n.position, n.created_at, n.id LIMIT ? OFFSET ?`;
+    sql = `SELECT ${cols} FROM notes n LEFT JOIN notes p ON p.owner_id = {owner} AND p.id = n.parent_id WHERE n.owner_id = {owner} AND (${opts.where}) ORDER BY n.position, n.created_at, n.id LIMIT ? OFFSET ?`;
     binds.push(opts.limit + 1, offset);
   }
   const rows = (await N.openNotes((await db.prepare(sql).bind(...binds).all<N.Note>()).results as unknown as Record<string, unknown>[])) as unknown as N.Note[];
@@ -85,7 +85,7 @@ export async function pageOfNotes(db: D1Database, opts: { where: string; binds: 
 
 // ---------------------------------------------------------------- change feed
 export async function changeFeed(db: D1Database, opts: { after?: number; since?: number; limit: number }) {
-  const pruned = Number((await db.prepare("SELECT value FROM prefs WHERE key = 'changes_pruned_through'").first<{ value: string }>())?.value ?? 0);
+  const pruned = Number((await db.prepare("SELECT value FROM prefs WHERE owner_id = '' AND key = 'changes_pruned_through' /*any-owner*/").first<{ value: string }>())?.value ?? 0);
   if (opts.after !== undefined && opts.after < pruned) return { expired: true as const };
   const where: string[] = [], binds: unknown[] = [];
   if (opts.after !== undefined) { where.push("c.seq > ?"); binds.push(opts.after); }
@@ -95,8 +95,8 @@ export async function changeFeed(db: D1Database, opts: { after?: number; since?:
   type Row = { seq: number; note_id: string; type: string; source: string; agent: string | null; created_at: number; title: string | null; kind: string | null; parent_id: string | null; deleted_at: number | null };
   let rows = (await db.prepare(
     `SELECT c.seq, c.note_id, c.type, c.source, c.agent, c.created_at, n.title, n.kind, n.parent_id, n.deleted_at
-     FROM changes c LEFT JOIN notes n ON n.id = c.note_id
-     ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY c.seq ${tail ? "DESC" : ""} LIMIT ?`,
+     FROM changes c LEFT JOIN notes n ON n.owner_id = {owner} AND n.id = c.note_id
+     WHERE c.owner_id = {owner}${where.length ? ` AND ${where.join(" AND ")}` : ""} ORDER BY c.seq ${tail ? "DESC" : ""} LIMIT ?`,
   ).bind(...binds, tail ? opts.limit : opts.limit + 1).all<Row>()).results;
   if (tail) rows = rows.reverse();
   const more = !tail && rows.length > opts.limit;
@@ -112,7 +112,7 @@ export async function changeFeed(db: D1Database, opts: { after?: number; since?:
       ...(r.kind ? { title: titles.get(r.note_id) || "Untitled", kind: r.kind, parent_id: r.parent_id, is_trashed: r.deleted_at !== null } : { exists: false }),
     })),
     // Always a cursor: pass it next time to get only newer changes (when nothing came back, it's your cursor as given).
-    next_cursor: items.length ? String(items[items.length - 1].seq) : opts.after !== undefined ? String(opts.after) : String((await db.prepare("SELECT COALESCE(MAX(seq), 0) AS s FROM changes").first<{ s: number }>())?.s ?? 0),
+    next_cursor: items.length ? String(items[items.length - 1].seq) : opts.after !== undefined ? String(opts.after) : String((await db.prepare("SELECT COALESCE(MAX(seq), 0) AS s FROM changes WHERE owner_id = {owner}").first<{ s: number }>())?.s ?? 0),
     has_more: more,
   };
 }

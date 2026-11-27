@@ -28,14 +28,14 @@ const RESERVED = new Set(["undo", "redo", "clear"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export class Bad extends Error {}
-const getPref = async (db: D1Database, k: string) => (await db.prepare("SELECT value FROM prefs WHERE key = ?").bind(k).first<{ value: string }>())?.value ?? null;
+const getPref = async (db: D1Database, k: string) => (await db.prepare("SELECT value FROM prefs WHERE owner_id = {owner} AND (key = ?)").bind(k).first<{ value: string }>())?.value ?? null;
 /** "On demand only" (the default): Waffle/Waffle only work when the user asks. No routines, check-ins, weekly tidy-ups or
  *  daily wrap-ups run by themselves; the same things still work from their buttons. "proactive" turns them back on. */
 export type AssistantMode = "on_demand" | "proactive";
 export const assistantMode = async (db: D1Database): Promise<AssistantMode> => ((await getPref(db, "assistant_mode")) === "proactive" ? "proactive" : "on_demand");
 export const setAssistantMode = (db: D1Database, m: AssistantMode) => setPref(db, "assistant_mode", m);
 
-const setPref = (db: D1Database, k: string, v: string) => db.prepare("INSERT INTO prefs (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(k, v).run();
+const setPref = (db: D1Database, k: string, v: string) => db.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ({owner}, ?, ?) ON CONFLICT(owner_id, key) DO UPDATE SET value = excluded.value").bind(k, v).run();
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 // ---------------------------------------------------------------- inbox
@@ -58,15 +58,15 @@ async function openItem(r: Row): Promise<InboxItem> {
 export async function listInbox(db: D1Database, opts: { status?: string; limit?: number } = {}) {
   const lim = Math.min(200, Math.max(1, opts.limit ?? 50));
   const rows = opts.status
-    ? (await db.prepare("SELECT * FROM inbox WHERE status = ? ORDER BY created_at DESC LIMIT ?").bind(opts.status, lim).all<Row>()).results
-    : (await db.prepare("SELECT * FROM inbox ORDER BY created_at DESC LIMIT ?").bind(lim).all<Row>()).results;
+    ? (await db.prepare("SELECT * FROM inbox WHERE owner_id = {owner} AND (status = ?) ORDER BY created_at DESC LIMIT ?").bind(opts.status, lim).all<Row>()).results
+    : (await db.prepare("SELECT * FROM inbox WHERE owner_id = {owner} ORDER BY created_at DESC LIMIT ?").bind(lim).all<Row>()).results;
   return Promise.all(rows.map(openItem));
 }
-export const unreadCount = async (db: D1Database) => (await db.prepare("SELECT COUNT(*) AS n FROM inbox WHERE status = 'new'").first<{ n: number }>())?.n ?? 0;
+export const unreadCount = async (db: D1Database) => (await db.prepare("SELECT COUNT(*) AS n FROM inbox WHERE owner_id = {owner} AND (status = 'new')").first<{ n: number }>())?.n ?? 0;
 
 export async function addInbox(db: D1Database, item: { source: InboxItem["source"]; kind: InboxItem["kind"]; title: string; body: string; action?: InboxAction | null; urgent?: boolean; at?: number }) {
   const id = crypto.randomUUID(), t = item.at ?? Date.now();
-  await db.prepare("INSERT INTO inbox (id, source, kind, title, body, action, status, urgent, created_at, updated_at) VALUES (?,?,?,?,?,?, 'new', ?,?,?)").bind(
+  await db.prepare("INSERT INTO inbox (owner_id, id, source, kind, title, body, action, status, urgent, created_at, updated_at) VALUES ({owner}, ?,?,?,?,?,?, 'new', ?,?,?)").bind(
     id, item.source, item.kind,
     await Vault.seal("inbox", id, "title", item.title.slice(0, 200)), await Vault.seal("inbox", id, "body", item.body.slice(0, 6000)),
     item.action ? await Vault.seal("inbox", id, "action", JSON.stringify(item.action)) : null,
@@ -76,13 +76,13 @@ export async function addInbox(db: D1Database, item: { source: InboxItem["source
 }
 
 async function getItem(db: D1Database, id: string) {
-  const r = await db.prepare("SELECT * FROM inbox WHERE id = ?").bind(id).first<Row>();
+  const r = await db.prepare("SELECT * FROM inbox WHERE owner_id = {owner} AND (id = ?)").bind(id).first<Row>();
   return r ? openItem(r) : null;
 }
 const setStatus = (db: D1Database, id: string, status: string, action?: string | null) =>
   action === undefined
-    ? db.prepare("UPDATE inbox SET status = ?, updated_at = ? WHERE id = ?").bind(status, Date.now(), id).run()
-    : db.prepare("UPDATE inbox SET status = ?, action = ?, updated_at = ? WHERE id = ?").bind(status, action, Date.now(), id).run();
+    ? db.prepare("UPDATE inbox SET status = ?, updated_at = ? WHERE owner_id = {owner} AND (id = ?)").bind(status, Date.now(), id).run()
+    : db.prepare("UPDATE inbox SET status = ?, action = ?, updated_at = ? WHERE owner_id = {owner} AND (id = ?)").bind(status, action, Date.now(), id).run();
 
 /** Accept a proposal (it's applied as an assistant change, so it can be undone like one), or mark a note done or dismissed. */
 export async function actOn(env: Env, id: string, what: "accept" | "dismiss" | "done" | "read", today?: string) {
@@ -119,7 +119,7 @@ export async function actOn(env: Env, id: string, what: "accept" | "dismiss" | "
 }
 
 export async function setFeedback(db: D1Database, id: string, v: number) {
-  const r = await db.prepare("UPDATE inbox SET feedback = ?, updated_at = ? WHERE id = ?").bind(v > 0 ? 1 : v < 0 ? -1 : 0, Date.now(), id).run();
+  const r = await db.prepare("UPDATE inbox SET feedback = ?, updated_at = ? WHERE owner_id = {owner} AND (id = ?)").bind(v > 0 ? 1 : v < 0 ? -1 : 0, Date.now(), id).run();
   if (!r.meta.changes) throw new Bad("not found");
   return { ok: true };
 }
@@ -127,7 +127,7 @@ export async function setFeedback(db: D1Database, id: string, v: number) {
 // ---------------------------------------------------------------- saved prompts
 export interface SavedPrompt { id: string; name: string; text: string; created_at: number; updated_at: number }
 export async function listPrompts(db: D1Database): Promise<SavedPrompt[]> {
-  const rows = (await db.prepare("SELECT * FROM prompts ORDER BY name").all<SavedPrompt>()).results;
+  const rows = (await db.prepare("SELECT * FROM prompts WHERE owner_id = {owner} ORDER BY name").all<SavedPrompt>()).results;
   return Promise.all(rows.map(async (r) => ({ ...r, text: (await Vault.open("prompts", r.id, "text", r.text)) ?? "" })));
 }
 export async function savePrompt(db: D1Database, input: { id?: unknown; name?: unknown; text?: unknown }) {
@@ -137,20 +137,20 @@ export async function savePrompt(db: D1Database, input: { id?: unknown; name?: u
   if (RESERVED.has(name)) throw new Bad(`/${name} is already a command`);
   if (!text || text.length > 4000) throw new Bad("The prompt needs some text (up to 4000 characters)");
   const id = typeof input.id === "string" && UUID.test(input.id) ? input.id : crypto.randomUUID(), t = Date.now();
-  const clash = await db.prepare("SELECT id FROM prompts WHERE name = ? AND id != ?").bind(name, id).first();
+  const clash = await db.prepare("SELECT id FROM prompts WHERE owner_id = {owner} AND (name = ? AND id != ?)").bind(name, id).first();
   if (clash) throw new Bad(`You already have /${name}`);
-  await db.prepare(`INSERT INTO prompts (id, name, text, created_at, updated_at) VALUES (?,?,?,?,?)
-    ON CONFLICT(id) DO UPDATE SET name = excluded.name, text = excluded.text, updated_at = excluded.updated_at`).bind(id, name, await Vault.seal("prompts", id, "text", text), t, t).run();
+  await db.prepare(`INSERT INTO prompts (owner_id, id, name, text, created_at, updated_at) VALUES ({owner}, ?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name, text = excluded.text, updated_at = excluded.updated_at WHERE prompts.owner_id = excluded.owner_id`).bind(id, name, await Vault.seal("prompts", id, "text", text), t, t).run();
   return { id, name, text };
 }
-export const deletePrompt = async (db: D1Database, id: string) => (await db.prepare("DELETE FROM prompts WHERE id = ?").bind(id).run()).meta.changes > 0;
+export const deletePrompt = async (db: D1Database, id: string) => (await db.prepare("DELETE FROM prompts WHERE owner_id = {owner} AND (id = ?)").bind(id).run()).meta.changes > 0;
 
 // ---------------------------------------------------------------- routines
 export interface Routine { id: string; name: string; prompt: string; days: number; time: string; notify: boolean; enabled: boolean; last_run: string | null; created_at: number; updated_at: number }
 type RRow = Omit<Routine, "notify" | "enabled"> & { notify: number; enabled: number };
 const openRoutine = async (r: RRow): Promise<Routine> => ({ ...r, name: (await Vault.open("routines", r.id, "name", r.name)) ?? "", prompt: (await Vault.open("routines", r.id, "prompt", r.prompt)) ?? "", notify: !!r.notify, enabled: !!r.enabled });
 export async function listRoutines(db: D1Database) {
-  return Promise.all((await db.prepare("SELECT * FROM routines ORDER BY time, created_at").all<RRow>()).results.map(openRoutine));
+  return Promise.all((await db.prepare("SELECT * FROM routines WHERE owner_id = {owner} ORDER BY time, created_at").all<RRow>()).results.map(openRoutine));
 }
 export async function saveRoutine(db: D1Database, input: Partial<Record<keyof Routine, unknown>>) {
   const name = String(input.name ?? "").trim(), prompt = String(input.prompt ?? "").trim(), time = String(input.time ?? "");
@@ -160,12 +160,12 @@ export async function saveRoutine(db: D1Database, input: Partial<Record<keyof Ro
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Bad("time must be HH:MM (24-hour)");
   if (!Number.isInteger(days) || days < 1 || days > 127) throw new Bad("Pick at least one day");
   const id = typeof input.id === "string" && UUID.test(input.id) ? input.id : crypto.randomUUID(), t = Date.now();
-  await db.prepare(`INSERT INTO routines (id, name, prompt, days, time, notify, enabled, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)
-    ON CONFLICT(id) DO UPDATE SET name = excluded.name, prompt = excluded.prompt, days = excluded.days, time = excluded.time, notify = excluded.notify, enabled = excluded.enabled, updated_at = excluded.updated_at`)
+  await db.prepare(`INSERT INTO routines (owner_id, id, name, prompt, days, time, notify, enabled, created_at, updated_at) VALUES ({owner}, ?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name, prompt = excluded.prompt, days = excluded.days, time = excluded.time, notify = excluded.notify, enabled = excluded.enabled, updated_at = excluded.updated_at WHERE routines.owner_id = excluded.owner_id`)
     .bind(id, await Vault.seal("routines", id, "name", name), await Vault.seal("routines", id, "prompt", prompt), days, time, input.notify === false ? 0 : 1, input.enabled === false ? 0 : 1, t, t).run();
   return (await listRoutines(db)).find((r) => r.id === id)!;
 }
-export const deleteRoutine = async (db: D1Database, id: string) => (await db.prepare("DELETE FROM routines WHERE id = ?").bind(id).run()).meta.changes > 0;
+export const deleteRoutine = async (db: D1Database, id: string) => (await db.prepare("DELETE FROM routines WHERE owner_id = {owner} AND (id = ?)").bind(id).run()).meta.changes > 0;
 
 /** Runs one routine as a normal assistant run (undoable), and puts what it said in the inbox. */
 export async function runRoutine(env: Env, r: Routine, now = Date.now()) {
@@ -201,7 +201,7 @@ export async function dueRoutines(env: Env, now = Date.now()) {
     if (late < 0 || late >= 10) continue;
     const slot = `${l.date} ${r.time}`;
     // claim the slot first so overlapping cron runs can't both run it
-    const claim = await db.prepare("UPDATE routines SET last_run = ? WHERE id = ? AND (last_run IS NULL OR last_run != ?)").bind(slot, r.id, slot).run();
+    const claim = await db.prepare("UPDATE routines SET last_run = ? WHERE owner_id = {owner} AND (id = ? AND (last_run IS NULL OR last_run != ?))").bind(slot, r.id, slot).run();
     if (!claim.meta.changes) continue;
     await runRoutine(env, r, now);
     ran++;
@@ -243,7 +243,7 @@ async function checkinContext(env: Env, now: number, tz: string) {
   const midnight = now - (Number(l.time.slice(0, 2)) * 60 + Number(l.time.slice(3, 5))) * 60_000 - (now % 60_000); // local midnight, near enough
   const today = (await listInbox(db, { limit: 60 })).filter((i) => i.created_at >= midnight);
   const said = today.map((i) => `- "${i.title}": ${i.body.slice(0, 160)} [${i.status}${i.feedback < 0 ? ", marked not helpful" : i.feedback > 0 ? ", marked helpful" : ""}]`);
-  const notHelpful = (await db.prepare("SELECT id, title, body, action, source, kind, status, urgent, feedback, created_at, updated_at FROM inbox WHERE (feedback < 0 OR status = 'dismissed') AND created_at > ? ORDER BY created_at DESC LIMIT 15").bind(now - 21 * 86_400_000).all<Row>()).results;
+  const notHelpful = (await db.prepare("SELECT id, title, body, action, source, kind, status, urgent, feedback, created_at, updated_at FROM inbox WHERE owner_id = {owner} AND ((feedback < 0 OR status = 'dismissed') AND created_at > ?) ORDER BY created_at DESC LIMIT 15").bind(now - 21 * 86_400_000).all<Row>()).results;
   const nh = await Promise.all(notHelpful.map(async (r) => `- "${(await Vault.open("inbox", r.id, "title", r.title)) ?? ""}"${r.feedback < 0 ? " (not helpful)" : " (dismissed)"}`));
   // Notes edited today, with an excerpt (for flashcards and spotting assignments)
   const hidden = await N.hiddenForAi(db); // pages hidden from AI never reach the check-in

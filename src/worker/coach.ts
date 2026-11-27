@@ -31,8 +31,8 @@ export const assistantName = async (_db: D1Database) => "Waffle";
 async function saveSession(db: D1Database, s: StudySession, played: PlayedItem[] | null, now: number) {
   const id = crypto.randomUUID();
   await db.batch([
-    db.prepare("INSERT INTO study_sessions (id, data, played, created_at) VALUES (?,?,?,?)").bind(id, await Vault.seal("study_sessions", id, "data", JSON.stringify(s)), played ? await Vault.seal("study_sessions", id, "played", JSON.stringify(played)) : null, now),
-    db.prepare("DELETE FROM study_sessions WHERE created_at < ?").bind(now - KEEP),
+    db.prepare("INSERT INTO study_sessions (owner_id, id, data, played, created_at) VALUES ({owner}, ?,?,?,?)").bind(id, await Vault.seal("study_sessions", id, "data", JSON.stringify(s)), played ? await Vault.seal("study_sessions", id, "played", JSON.stringify(played)) : null, now),
+    db.prepare("DELETE FROM study_sessions WHERE owner_id = {owner} AND (created_at < ?)").bind(now - KEEP),
   ]);
   return id;
 }
@@ -40,7 +40,7 @@ async function saveSession(db: D1Database, s: StudySession, played: PlayedItem[]
 /** Newest first, optionally only sessions that touched these pages. The filter runs after opening, since SQL can't see inside. */
 export async function recentSessions(db: D1Database, o: { ids?: string[]; days?: number; limit?: number; now?: number } = {}): Promise<SavedSession[]> {
   const since = (o.now ?? Date.now()) - (o.days ?? 365) * 864e5, want = o.ids?.length ? new Set(o.ids) : null, out: SavedSession[] = [];
-  const rows = (await db.prepare("SELECT id, data, created_at, played IS NOT NULL AS has_played FROM study_sessions WHERE created_at >= ? ORDER BY created_at DESC LIMIT 300").bind(since).all<{ id: string; data: string; created_at: number; has_played: number }>()).results;
+  const rows = (await db.prepare("SELECT id, data, created_at, played IS NOT NULL AS has_played FROM study_sessions WHERE owner_id = {owner} AND (created_at >= ?) ORDER BY created_at DESC LIMIT 300").bind(since).all<{ id: string; data: string; created_at: number; has_played: number }>()).results;
   for (const r of rows) {
     try {
       const s = JSON.parse((await Vault.open("study_sessions", r.id, "data", r.data)) ?? "null") as StudySession | null;
@@ -56,7 +56,7 @@ const IN_HISTORY = new Set<StudySession["mode"]>(["quiz", "blanks", "match", "te
 /** The History list, newest first: no questions, only what a row shows. */
 export async function history(db: D1Database, o: { ids?: string[]; limit?: number } = {}) {
   const want = o.ids?.length ? new Set(o.ids) : null, limit = Math.min(o.limit ?? 100, 200);
-  const rows = (await db.prepare("SELECT id, data, created_at FROM study_sessions ORDER BY created_at DESC LIMIT 400").all<{ id: string; data: string; created_at: number }>()).results;
+  const rows = (await db.prepare("SELECT id, data, created_at FROM study_sessions WHERE owner_id = {owner} ORDER BY created_at DESC LIMIT 400").all<{ id: string; data: string; created_at: number }>()).results;
   const out: { id: string; mode: StudySession["mode"]; ids: string[]; title: string; right: number; total: number; created_at: number }[] = [];
   for (const r of rows) {
     try {
@@ -91,7 +91,7 @@ async function pageTitles(db: D1Database, ids: string[]) {
   const unique = [...new Set(ids)], titles = new Map<string, string>();
   for (let i = 0; i < unique.length; i += 80) {
     const part = unique.slice(i, i + 80);
-    const rows = (await db.prepare(`SELECT id, title FROM notes WHERE id IN (${part.map(() => "?").join(",")})`).bind(...part).all<{ id: string; title: string | null }>()).results;
+    const rows = (await db.prepare(`SELECT id, title FROM notes WHERE owner_id = {owner} AND (id IN (${part.map(() => "?").join(",")}))`).bind(...part).all<{ id: string; title: string | null }>()).results;
     for (const r of rows) titles.set(r.id, (await Vault.open("notes", r.id, "title", r.title)) ?? "");
   }
   return titles;
@@ -130,7 +130,7 @@ export async function sessionReport(db: D1Database, id: string, tz: string) {
 
 /** One past session with its questions. played is null for sessions from before they were saved in full. */
 export async function pastSession(db: D1Database, id: string) {
-  const r = await db.prepare("SELECT id, data, played, created_at FROM study_sessions WHERE id = ?").bind(id).first<{ id: string; data: string; played: string | null; created_at: number }>();
+  const r = await db.prepare("SELECT id, data, played, created_at FROM study_sessions WHERE owner_id = {owner} AND (id = ?)").bind(id).first<{ id: string; data: string; played: string | null; created_at: number }>();
   if (!r) return null;
   const s = JSON.parse((await Vault.open("study_sessions", r.id, "data", r.data)) ?? "null") as StudySession | null;
   if (!s) return null;
@@ -165,7 +165,7 @@ export async function studyPicture(db: D1Database, now: number, tz: string, ids?
     const wd = new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
     return n < 0 ? `test was ${-n} days ago` : `test ${n === 0 ? "TODAY" : n === 1 ? "TOMORROW" : `in ${n} days`} (${wd} ${day})`;
   };
-  const gdb = await db.prepare("SELECT id FROM notes WHERE kind = 'database' AND system = 'grades' AND deleted_at IS NULL LIMIT 1").first<{ id: string }>();
+  const gdb = await db.prepare("SELECT id FROM notes WHERE owner_id = {owner} AND (kind = 'database' AND system = 'grades' AND deleted_at IS NULL) LIMIT 1").first<{ id: string }>();
   const book = gdb && hidden.has(gdb.id) ? null : await Hub.gradeBook(db).catch(() => null);
   const lines = subjects.map((x) => {
     const ds = live.filter((d) => d.subject_id === x.id), cards = ds.reduce((n, d) => n + d.cards, 0), mastered = ds.reduce((n, d) => n + d.mastered, 0), due = ds.reduce((n, d) => n + d.due, 0);
@@ -187,7 +187,7 @@ export async function studyPicture(db: D1Database, now: number, tz: string, ids?
 /** What the time data says (#7): rushing on the questions the user gets wrong, and the part of the day the user scores best. From the last
  *  120 days: every timed answer (sessions saved with their questions) and every scored session's local hour. */
 export async function insights(db: D1Database, tz: string, now = Date.now()) {
-  const rows = (await db.prepare("SELECT id, data, played, created_at FROM study_sessions WHERE created_at >= ? ORDER BY created_at DESC LIMIT 200")
+  const rows = (await db.prepare("SELECT id, data, played, created_at FROM study_sessions WHERE owner_id = {owner} AND (created_at >= ?) ORDER BY created_at DESC LIMIT 200")
     .bind(now - 120 * 864e5).all<{ id: string; data: string; played: string | null; created_at: number }>()).results;
   const items: { right: boolean; secs: number }[] = [], sessions: { pct: number; hour: number }[] = [];
   for (const r of rows) {
@@ -214,7 +214,7 @@ export async function logExamGrade(db: D1Database, id: string, b: { score?: unkn
 
 /** Weighted average per class from the Grades database. */
 export async function gradeAverages(db: D1Database) {
-  const gdb = await db.prepare("SELECT id FROM notes WHERE kind = 'database' AND system = 'grades' AND deleted_at IS NULL LIMIT 1").first<{ id: string }>();
+  const gdb = await db.prepare("SELECT id FROM notes WHERE owner_id = {owner} AND (kind = 'database' AND system = 'grades' AND deleted_at IS NULL) LIMIT 1").first<{ id: string }>();
   if (!gdb || (await hiddenIds(db)).has(gdb.id)) return []; // only AI reads this: a Grades database hidden from AI stays out
   try {
     const g = await N.getNote(db, gdb.id);
@@ -361,7 +361,7 @@ export async function planForExam(env: Env, examId: string, tz: string, now = Da
 /** Open tasks due from `from` up to `to` (for planning around them). */
 async function tasksBetween(db: D1Database, from: string, to: string) {
   const out: { date: string; time: string | null; title: string }[] = [];
-  const tdb = await db.prepare("SELECT id FROM notes WHERE kind = 'database' AND system = 'tasks' AND deleted_at IS NULL LIMIT 1").first<{ id: string }>();
+  const tdb = await db.prepare("SELECT id FROM notes WHERE owner_id = {owner} AND (kind = 'database' AND system = 'tasks' AND deleted_at IS NULL) LIMIT 1").first<{ id: string }>();
   if (!tdb) return out;
   for (const r of await N.listChildren(db, tdb.id)) {
     if (r.is_template) continue;

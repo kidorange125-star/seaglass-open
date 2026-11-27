@@ -13,7 +13,7 @@ import { FocusTimer, ReviewView } from "./components/StudyTools";
 import { CaptureDialog, takeShared, VoiceDialog } from "./components/CaptureTools";
 import { BackupDialog } from "./components/BackupDialog";
 import { OfflineBadge } from "./components/OfflineBadge";
-import { isNetworkError, startOfflineSync, warmCache } from "./offline";
+import { forgetOtherPerson, isNetworkError, startOfflineSync, warmCache } from "./offline";
 import { agentName, syncPersona, usePersona } from "./persona";
 import { watchForUpdates } from "./version";
 import { syncPush } from "./push";
@@ -32,7 +32,7 @@ import { Home, Trash } from "./components/Views";
 import { TasksView } from "./components/Tasks";
 import { Dialogs } from "./components/ui";
 import { bootDone } from "./boot";
-import { SignIn } from "./components/Welcome";
+import { JoinHousehold, SignIn } from "./components/Welcome";
 import { Onboarding } from "./components/Onboarding";
 import { setMe } from "./me";
 import { CalendarView } from "./components/CalendarView";
@@ -158,18 +158,21 @@ function Shell() {
 
 export function App() {
   // What to show first: the setup screen (a new copy), sign-in, or the app.
-  const [view, setView] = useState<"loading" | "setup" | "signin" | "app" | "nokey">("loading");
+  const [view, setView] = useState<"loading" | "setup" | "signin" | "join" | "app" | "nokey">("loading");
+  // An invite link (#/join/CODE) opens the join screen for someone without an account here.
+  const joinCode = () => /^#\/join(?:\/([A-Za-z0-9-]+))?/.exec(location.hash);
   const [codeRequired, setCodeRequired] = useState(true);
   const [noTables, setNoTables] = useState(false);
-  const check = () => api.session().then((r) => {
+  const check = () => api.session().then(async (r) => {
     if (r.setup) { setCodeRequired(!!r.code_required); setNoTables(!!r.no_tables); setView("setup"); }
-    else { setMe(r.user); setView(r.authed ? "app" : "signin"); }
+    else if (r.authed && r.user && (await forgetOtherPerson(r.user.id))) location.reload(); // someone else used this device last
+    else { setMe(r.user); setView(r.authed ? "app" : joinCode() ? "join" : "signin"); }
   }).catch((e) => {
     if (e instanceof ApiError && e.status === 503 && e.message === "no_data_key") setView("nokey");
     else setView(isNetworkError(e) ? "app" : "signin"); // offline: carry on with what's cached (an API 401 later still shows sign-in)
   });
   useEffect(() => { setUnauthorizedHandler(() => setView("signin")); void check(); }, []);
-  useEffect(() => { if (view === "setup" || view === "signin" || view === "nokey") bootDone(); }, [view]);
+  useEffect(() => { if (view === "setup" || view === "signin" || view === "join" || view === "nokey") bootDone(); }, [view]);
   if (view === "loading") return null;
   if (view === "nokey") return (
     <div className="login welcome setup">
@@ -182,6 +185,7 @@ export function App() {
     </div>
   );
   if (view === "setup") return <Onboarding codeRequired={codeRequired} noTables={noTables} onDone={() => void check()} />;
-  if (view === "signin") return <SignIn onDone={() => void check()} />;
+  if (view === "signin") return <SignIn onDone={() => void check()} onJoin={() => setView("join")} />;
+  if (view === "join") return <JoinHousehold code={joinCode()?.[1] ?? ""} onDone={() => { history.replaceState(null, "", "#/"); void check(); }} onBack={() => { history.replaceState(null, "", "#/"); setView("signin"); }} />;
   return <StoreProvider><Shell /></StoreProvider>;
 }

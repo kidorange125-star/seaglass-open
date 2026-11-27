@@ -25,12 +25,14 @@ This is **Seaglass Open**, the open-source edition, released under the [Apache L
   Ask or Never. By default Waffle asks before it changes anything, with Approve and Don't right in the chat.
 - **A first visit you can try before setting anything up**: write a first page, take a quick quiz, meet Waffle, then make
   your account (username and password; just you or a household).
+- **A household, each person private**: invite family members with a code or a link (Settings > Account & household).
+  Everyone gets their own account, and their pages, tasks, study, assistant and files are theirs alone: the server keeps
+  them apart, not just the screens. Owners invite, change roles and remove people; anyone can leave.
 
 ## What's not in it yet
 
-Seaglass Open is new (0.1). Family members can't get their own accounts yet: the household setting is there, but adding a
-second person waits until every part of Seaglass keeps each person's notes separate. Bring-your-own keys for other AI
-providers, usage limits, importers and self-updating are next. See the [roadmap](ROADMAP.md).
+Seaglass Open is new (0.2). Kid accounts, a shared Family space and sharing pages with a person come next, then
+bring-your-own keys for other AI providers, usage limits, importers and self-updating. See the [roadmap](ROADMAP.md).
 
 ## Run your own
 

@@ -5,6 +5,14 @@
 import type { Env } from "./env";
 import * as Vault from "./vault";
 import { authMode } from "./claude-auth";
+import { ownerOf } from "./scope";
+
+/** Whose uploaded file this is. Files from before people had their own things carry no owner: the first account's. */
+export async function fileOwner(env: Env, obj: { customMetadata?: Record<string, string> }) {
+  const o = obj.customMetadata?.owner;
+  if (o) return o;
+  return (await env.DB.prepare("SELECT id FROM users ORDER BY created_at LIMIT 1").first<{ id: string }>())?.id ?? "dev";
+}
 
 export interface PageFile { src: string; name: string; mime: string; size: number }
 export const PART = 30_000;
@@ -32,6 +40,9 @@ export async function textOf(env: Env, f: PageFile): Promise<string> {
   const key = keyOf(f.src);
   if (!key) throw new Error("That isn't a file in Seaglass.");
   if (!readable(f)) throw new Error(`${f.name} isn't a PDF, so there's no text to read.`);
+  // Only the person who uploaded it (a link to someone else's file pasted into a page opens nothing).
+  const head = await env.FILES.head(key);
+  if (head && (await fileOwner(env, head)) !== ownerOf(env.DB)) throw new Error(`${f.name} is missing from file storage.`);
   const cacheKey = `filetext/${key}.md`;
   const cached = await env.FILES.get(cacheKey);
   if (cached) return new TextDecoder().decode(await Vault.openBytes("files", cacheKey, "body", new Uint8Array(await cached.arrayBuffer())));

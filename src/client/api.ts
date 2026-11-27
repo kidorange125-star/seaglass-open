@@ -81,6 +81,9 @@ export interface SetupData {
 export type PermLevel = "allow" | "ask" | "never";
 export type AgentPermissions = Record<"add" | "edit" | "delete" | "memory" | "routines" | "web", PermLevel>;
 export interface Account { id: string; username: string; display_name: string; role: string }
+/** An invite still waiting to be used (its code is only shown once, when it's made). */
+export interface PendingInvite { id: string; role: string; label: string; created_at: number; expires_at: number }
+export interface NewInvite { code: string; link: string; role: string; expires_at: number }
 export interface Household { mode: "individual" | "household"; name: string }
 export interface SessionInfo { authed: boolean; setup?: boolean; no_tables?: boolean; code_required?: boolean; code_set?: boolean; user?: Account | null; household?: Household }
 export interface RunSummary { run_id: string; source: string; agents: string[]; started_at: number; n: number; undone: number; state: "applied" | "undone" | "partial"; summary: string[] }
@@ -129,6 +132,12 @@ export const api = {
   signOutEverywhere: () => call<{ ok: boolean }>("/api/account/sign-out-everywhere", { method: "POST" }),
   setHousehold: (h: Partial<Household>) => call<{ ok: boolean; household: Household }>("/api/household", { method: "PUT", body: j(h) }),
   logout: () => call<{ ok: boolean }>("/api/logout", { method: "POST" }),
+  members: () => call<Account[]>("/api/household/members"),
+  invites: () => call<PendingInvite[]>("/api/household/invites"),
+  invite: (role: "adult" | "owner", label: string) => call<NewInvite>("/api/household/invites", { method: "POST", body: j({ role, label }) }),
+  cancelInvite: (id: string) => call<{ ok: boolean }>(`/api/household/invites/${id}`, { method: "DELETE" }),
+  setRole: (id: string, role: "adult" | "owner") => call<{ ok: boolean }>(`/api/household/members/${id}`, { method: "PATCH", body: j({ role }) }),
+  removeMember: (id: string, confirm: string) => call<{ ok: boolean; left: boolean }>(`/api/household/members/${id}`, { method: "DELETE", body: j({ confirm }) }),
 
   tree: () => call<TreeNode[]>("/api/tree"),
   recent: () => call<TreeNode[]>("/api/recent"),

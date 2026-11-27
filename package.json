@@ -15,7 +15,8 @@
     "push:keygen": "node scripts/push-keygen.mjs",
     "data:keygen": "node scripts/data-keygen.mjs",
     "voice:model": "node scripts/voice-model.mjs",
-    "backup:restore": "node scripts/restore-backup.mjs"
+    "backup:restore": "node scripts/restore-backup.mjs",
+    "check:scope": "node scripts/check-scope.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
@@ -72,7 +73,7 @@
     "vite": "^8.3.6",
     "wrangler": "^4.158.0"
   },
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "Apache-2.0",
   "description": "Seaglass Open: a private notes app you run yourself on Cloudflare",
   "repository": {

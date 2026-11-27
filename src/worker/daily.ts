@@ -10,8 +10,8 @@ import { complete } from "./ai";
 import { dateOf, isDone, localNow, type Row } from "./reminders";
 
 const ROOT = "daily_root", WRAP = "daily_wrap", WRAP_AT = "21:30", MODEL = "claude-haiku-5-5";
-const getPref = async (db: D1Database, k: string) => (await db.prepare("SELECT value FROM prefs WHERE key = ?").bind(k).first<{ value: string }>())?.value ?? null;
-const setPref = (db: D1Database, k: string, v: string) => db.prepare("INSERT INTO prefs (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(k, v).run();
+const getPref = async (db: D1Database, k: string) => (await db.prepare("SELECT value FROM prefs WHERE owner_id = {owner} AND (key = ?)").bind(k).first<{ value: string }>())?.value ?? null;
+const setPref = (db: D1Database, k: string, v: string) => db.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ({owner}, ?, ?) ON CONFLICT(owner_id, key) DO UPDATE SET value = excluded.value").bind(k, v).run();
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 export const dayTitle = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
@@ -63,7 +63,7 @@ export async function wrapUp(env: Env, now = Date.now()) {
   if (l.time < WRAP_AT || l.time >= "21:40") return null;
   const page = await findDay(db, l.date);
   if (!page) return null;
-  const claim = await db.prepare("INSERT INTO prefs (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE prefs.value != excluded.value").bind(WRAP, l.date).run();
+  const claim = await db.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ({owner}, ?, ?) ON CONFLICT(owner_id, key) DO UPDATE SET value = excluded.value WHERE prefs.value != excluded.value").bind(WRAP, l.date).run();
   if (!claim.meta.changes) return null;
   return writeWrapUp(env, page.id, l.date, now);
 }
@@ -74,7 +74,7 @@ export async function writeWrapUp(env: Env, id: string, date: string, now = Date
   if (!page || page.locked) return null;
   if (hidden.has(page.id)) throw new N.HiddenError(); // the day's note is hidden from AI
   const done: string[] = [], open: string[] = [];
-  const tdb = await db.prepare("SELECT id FROM notes WHERE kind = 'database' AND system = 'tasks' AND deleted_at IS NULL LIMIT 1").first<{ id: string }>();
+  const tdb = await db.prepare("SELECT id FROM notes WHERE owner_id = {owner} AND (kind = 'database' AND system = 'tasks' AND deleted_at IS NULL) LIMIT 1").first<{ id: string }>();
   if (tdb) {
     const list = await N.getNote(db, tdb.id);
     let schema: Row["schema"] = {};
