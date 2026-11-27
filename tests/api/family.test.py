@@ -68,7 +68,8 @@ for m, p, b in [("POST", "/agent", {"message": "mock:create x", "history": []}),
 ev = [json.loads(l) for l in ana("POST", "/api/agent", {"message": f"mock:tool search_notes {{\"query\": \"{MARK}\"}}", "history": []})[1].splitlines() if l.strip().startswith("{")]
 res = [e for e in ev if e["type"] == "tool_result"]
 check("the assistant (personal) can't see Family pages", res and fam["id"] not in json.dumps(res) and not any(e.get("note_ids") for e in res), res)
-check("signed out, nothing", nobody("GET", f"{F}/tree")[0] == 401)
+# (With AUTH_OPEN=1 a request with no session counts as the first account, so this only means something without it.)
+if not (j(nobody("GET", "/api/session")[1]) or {}).get("authed"): check("signed out, nothing", nobody("GET", f"{F}/tree")[0] == 401)
 
 # ---- files
 s, t = ana("POST", f"{F}/upload", raw=PNG, ctype="image/png"); ffile = (j(t) or {}).get("url", "")

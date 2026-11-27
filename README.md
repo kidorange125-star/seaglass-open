@@ -28,6 +28,7 @@ This is **Seaglass Open**, the open-source edition, released under the [Apache L
 - **A household, each person private**: invite family members with a code or a link (Settings > Account & household).
   Everyone gets their own account, and their pages, tasks, study, assistant and files are theirs alone: the server keeps
   them apart, not just the screens. Owners invite (a code, a link or a QR code), change roles and remove people.
+- **A Family space**: shared pages, Family tasks and a calendar for the household, next to everyone's private space.
 - **Kid accounts**: the assistant teaches instead of doing homework, with no web search and a small daily AI allowance
   unless a parent changes them.
 - **AI usage you can see and cap**: what each person and feature costs, with daily and monthly limits (Settings > AI
@@ -35,7 +36,7 @@ This is **Seaglass Open**, the open-source edition, released under the [Apache L
 
 ## What's not in it yet
 
-Seaglass Open is new (0.2). A shared Family space and sharing pages with a person come next, then
+Seaglass Open is new (0.2). Sharing a page with one person comes next, then
 bring-your-own keys for other AI providers, usage limits, importers and self-updating. See the [roadmap](ROADMAP.md).
 
 ## Run your own
@@ -43,7 +44,8 @@ bring-your-own keys for other AI providers, usage limits, importers and self-upd
 1. Click **Deploy to Cloudflare** above (or follow the command-line steps in [docs/SETUP.md](docs/SETUP.md)).
 2. Set two secrets for the new Worker: `SETUP_CODE` (any phrase; it proves the new copy is yours) and `DATA_KEY` (the
    encryption key; **keep a copy in a password manager: losing it loses every note**). [docs/SETUP.md](docs/SETUP.md) shows how.
-3. Open your Worker's address. Seaglass asks who it's for and makes your account.
+3. Open your Worker's address. Seaglass asks who it's for, makes your account, then walks you through connecting Claude
+   (or skipping AI), what the assistant may do, inviting your household and this device.
 
 Waffle needs a Claude API key (`ANTHROPIC_API_KEY`); everything else works without one.
 

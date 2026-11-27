@@ -18,17 +18,26 @@ What's planned for Seaglass Open, roughly in order. Nothing here exists yet unle
 - AI usage per person, feature and model (Settings > AI usage), with daily and monthly limits per person and a monthly
   limit for the whole household, checked before every request.
 
+## 0.2.2: Family space and a full setup (done)
+
+- A shared Family space for the household: pages, databases, Family tasks and the calendar, switched to from the top
+  menu. Everything personal (the assistant, study, settings) stays in each person's own space.
+- Setup goes on after the account: connect Claude with an API key (or save it for later, or choose no AI at all), what
+  the assistant may do before asking, which models may be used, web search, a spending limit, inviting the household,
+  and the theme and reminders for the device. Keys are stored encrypted and changeable in Settings > Setup & status;
+  notifications no longer need a key made on the command line.
+- Passwords need at least 6 characters.
+
 ## 0.2.x: households, continued
 
-- A shared Family space for the calendar, groceries and chores; sharing a page or folder with a person (view, comment
-  or edit).
+- Sharing a page or folder with one person (view, comment or edit).
 
 ## 0.3: your own AI keys
 
 - A general assistant harness with an adapter per provider (Anthropic, OpenAI, Google, OpenRouter, Ollama or any compatible
   address) that keeps each provider's own strengths instead of the lowest common denominator, and a table of what each model
   can do so features adapt.
-- Keys per household or per person, stored encrypted, never shown again after saving.
+- Keys per person as well as per household (household keys, stored encrypted and never shown again, arrived in 0.2.2).
 - Detailed controls for features, data, web access and automatic jobs (usage and spending limits arrived in 0.2.1).
 
 ## 0.4: setup and updates
