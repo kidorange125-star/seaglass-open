@@ -80,6 +80,25 @@ export async function warmCache(ids: string[], tasksDb: string | null) {
   for (const u of urls) { try { await fetch(u, { credentials: "same-origin" }); } catch { return; } await new Promise((r) => setTimeout(r, 120)); }
 }
 
+// What stays on a device when someone else signs in on it: how the device looks and works, never anyone's things.
+const DEVICE_KEYS = /^sg\.(theme|glass|device|voice|sbw|lecture\.piece|ink\.(pen|width|snap|auto))(\.|$)/;
+
+/** On a shared device (a family tablet), a different person signing in starts clean: the last person's offline copies,
+ *  unsent edits, unfinished quizzes, recent pages and the service worker's cache go. Returns true when it cleared. */
+export async function forgetOtherPerson(userId: string) {
+  let prev: string | null = null;
+  try { prev = localStorage.getItem("sg.user"); } catch { return false; }
+  if (prev === userId) return false;
+  try { localStorage.setItem("sg.user", userId); } catch { /* storage unavailable */ }
+  if (prev === null) return false; // first sign-in on this device (or before 0.2): nothing of anyone else's to clear
+  await clearOffline();
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith("sg.") && k !== "sg.user" && !DEVICE_KEYS.test(k)) localStorage.removeItem(k);
+    sessionStorage.clear();
+  } catch { /* storage unavailable */ }
+  return true;
+}
+
 /** Forget everything kept for offline use (on log out). */
 export async function clearOffline() {
   try { localStorage.removeItem(KEY); localStorage.removeItem("sg.study.unfinished"); for (const k of OFFLINE_KEYS) localStorage.removeItem(k); } catch { /* storage unavailable */ } // + unfinished quizzes (study/resume.ts) and quizzes kept for offline (study/offline.ts)

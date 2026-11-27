@@ -2,14 +2,19 @@
 
 What's planned for Seaglass Open, roughly in order. Nothing here exists yet unless it says so.
 
-## 0.2: households
+## 0.2: households (done)
 
-- Separate everything per person: pages, the assistant's conversation and memory, study history and grades, tasks,
-  reminders, search and settings, so family members can't see each other's private things.
-- A test suite that signs in as two people and checks that neither can reach the other's data through any route or tool.
-- Invite family members by link or QR code; roles (owner, adult, kid); a shared Family space for the calendar, groceries
-  and chores; sharing a page or folder with a person (view, comment or edit).
-- Kid accounts: Waffle teaches rather than answers homework, a daily AI allowance, web search only if a parent allows it.
+- Everything is separate per person: pages, the assistant's conversation and memory, study history and grades, tasks,
+  reminders, search, settings and uploaded files, so family members can't see each other's private things.
+- Test suites that sign in as two people and check that neither can reach the other's data through any route or tool.
+- Invite family members with a code or a link; owner and adult roles; removing someone (or leaving) deletes their things.
+
+## 0.2.x: households, continued
+
+- A QR code for invites; kid accounts (Waffle teaches rather than answers homework, a daily AI allowance, web search
+  only if a parent allows it).
+- A shared Family space for the calendar, groceries and chores; sharing a page or folder with a person (view, comment
+  or edit).
 
 ## 0.3: your own AI keys
 

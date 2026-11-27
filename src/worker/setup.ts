@@ -146,6 +146,4 @@ export function registerAccountRoutes(app: Hono<{ Bindings: Env }>) {
     return c.json({ ok: true, household: await household(c.env.DB) });
   });
 
-  // Family members come with the next release, once every part of Seaglass keeps each person's things separate.
-  app.post("/api/household/members", (c) => c.json({ error: "Adding family members arrives in Seaglass Open 0.2. Until then, this Seaglass has one account." }, 501));
 }

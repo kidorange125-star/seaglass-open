@@ -34,7 +34,7 @@ not hidden in the interface. (Whoever holds `DATA_KEY` can still read the whole 
 - `npm run check:scope` lists every query on a personal table without `owner_id` (or a `scope-ok: why` note). It must be 0.
 - A canary crawl: two real accounts; a unique marker in everything A owns; as B, every route (from the router's own list)
   and every assistant and MCP tool with A's ids, then the cron. The marker must never appear and A's data must not change.
-- Adding members stays off (`POST /api/household/members` answers 501) until both pass.
+- Adding members stayed off until both passed (they do, in 0.2).
 
 ## Where it stands
 
@@ -42,8 +42,14 @@ not hidden in the interface. (Whoever holds `DATA_KEY` can still read the whole 
   databases (`scope.ts`), and every way in: signed-in requests, the quick-capture key (its owner), public shared pages
   (the page's owner), MCP (the approving account, `props.user`), and the cron (each account in turn; backups, sealing,
   OAuth clean-up and the feed prune stay system-wide). Uploaded files record their owner in R2 metadata. API suites pass.
-- Next: invites and roles (backups and household settings owner-only), the Vault owner backstop, clearing device storage
-  on sign-in, file reads checked against their owner, then the canary crawl.
+- Done too: invites (a one-time code and a link, 7 days, only its hash stored; `household.ts`, migration 0024), owner and
+  adult roles (backups, encryption upkeep and household settings are owner-only; there is always an owner), removing a
+  member or leaving (their rows in every personal table, their R2 files and text caches, sessions and MCP grants are
+  deleted), file reads checked against the file's owner (or a page they shared publicly), and a new person signing in
+  on a device clearing the last person's offline copies and `sg.*` storage (`offline.ts` `forgetOtherPerson`).
+- Proof: `tests/api/households.test.py` (a second person crawls every GET route and MCP tool with the first person's ids)
+  and `tests/api/invites.test.py` (two real accounts: joining, roles, separation, removal), with every other suite green.
+- Later: the Vault owner backstop (a second check inside `Vault.open`), kid accounts, a shared Family space.
 
 ## In 0.2
 

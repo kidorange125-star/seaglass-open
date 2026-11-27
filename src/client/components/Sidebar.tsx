@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useMemo, useRef, useState, type ReactElement } from "react";
 import { MovePicker } from "./MovePicker";
 import { EDITION } from "../edition";
@@ -228,9 +229,11 @@ export function Sidebar() {
       </div>
       <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={(e) => { setSettings(null); void restoreInput(e.target.files?.[0]); }} />
       <SidebarResizer />
-      {setupOpen && <SetupModal onClose={() => setSetupOpen(false)} />}
-      {accountOpen && <AccountDialog onClose={() => setAccountOpen(false)} />}
-      {permsOpen && <PermissionsDialog onClose={() => setPermsOpen(false)} />}
+      {/* On the page itself, not inside the sidebar: on phones the sidebar is a drawer that slides away (and takes its
+          children with it) when it closes. */}
+      {setupOpen && createPortal(<SetupModal onClose={() => setSetupOpen(false)} />, document.body)}
+      {accountOpen && createPortal(<AccountDialog onClose={() => setAccountOpen(false)} />, document.body)}
+      {permsOpen && createPortal(<PermissionsDialog onClose={() => setPermsOpen(false)} />, document.body)}
     </aside>
   );
 }

@@ -1,13 +1,13 @@
 // The first screens of Seaglass Open: setting up a new copy (who it's for, then your account) and signing in.
 // Both use plain fetch so the server's own message ("Wrong username or password.") reaches the screen.
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { Logo } from "../icons";
 
-async function post(path: string, body: unknown): Promise<{ ok: boolean; error?: string; field?: string }> {
+async function post<T = Record<string, unknown>>(path: string, body: unknown): Promise<{ ok: boolean; error?: string; field?: string; data?: T }> {
   try {
     const r = await fetch(path, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const d = (await r.json().catch(() => ({}))) as { error?: string; field?: string };
-    return r.ok ? { ok: true } : { ok: false, error: d.error ?? `Something went wrong (${r.status}).`, field: d.field };
+    return r.ok ? { ok: true, data: d as T } : { ok: false, error: d.error ?? `Something went wrong (${r.status}).`, field: d.field };
   } catch {
     return { ok: false, error: "Can't reach Seaglass. Check your connection and try again." };
   }
@@ -25,7 +25,7 @@ export function Field({ label, hint, children }: { label: ReactNode; hint?: Reac
   );
 }
 
-export function SignIn({ onDone }: { onDone: () => void }) {
+export function SignIn({ onDone, onJoin }: { onDone: () => void; onJoin?: () => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
@@ -45,6 +45,62 @@ export function SignIn({ onDone }: { onDone: () => void }) {
       <Field label={<>Password</>}>{(id) => <input id={id} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />}</Field>
       {err && <p className="err" role="alert">{err}</p>}
       <button className="primary" disabled={busy || !username.trim() || !password}>{busy ? "Signing in…" : "Sign in"}</button>
+      {onJoin && <button type="button" className="ghost w-alt" onClick={onJoin}>I have an invite code</button>}
+    </form>
+  );
+}
+
+/** Joining a household: the invite code (from the link, or typed), then your own account. */
+export function JoinHousehold({ code: initial, onDone, onBack }: { code: string; onDone: () => void; onBack: () => void }) {
+  const [code, setCode] = useState(initial);
+  const [ok, setOk] = useState<{ household: string; invited_by: string; label: string } | null>(null);
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [again, setAgain] = useState("");
+  const [err, setErr] = useState<{ text: string; field?: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const checkCode = async (c: string) => {
+    setBusy(true); setErr(null);
+    const r = await post<{ household: string; invited_by: string; label: string }>("/api/join/check", { code: c });
+    setBusy(false);
+    if (r.ok && r.data) { setOk(r.data); if (r.data.label && !name) setName(r.data.label); }
+    else setErr({ text: r.error ?? "", field: "code" });
+  };
+  useEffect(() => { if (initial) void checkCode(initial); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const mismatch = again.length > 0 && again !== password;
+  const ready = !!ok && name.trim() && username.trim() && password.length >= 10 && again === password;
+  const place = ok?.household ? ok.household : "this Seaglass";
+
+  if (!ok) return (
+    <form className="login welcome" onSubmit={(e) => { e.preventDefault(); if (!busy && code.trim()) void checkCode(code); }}>
+      <div className="brand"><Logo size={44} /> Seaglass</div>
+      <h1>Join a household</h1>
+      <p>Type the code from your invite. It looks like <code>ABCD-EFGH-JKMN</code>.</p>
+      <Field label="Invite code">{(id) => <input id={id} autoFocus autoCapitalize="characters" autoComplete="one-time-code" spellCheck={false} className="w-code" value={code} onChange={(e) => setCode(e.target.value)} aria-invalid={err?.field === "code"} />}</Field>
+      {err && <p className="err" role="alert">{err.text}</p>}
+      <button className="primary" disabled={busy || !code.trim()}>{busy ? "Checking…" : "Continue"}</button>
+      <button type="button" className="ghost w-alt" onClick={onBack}>Back to sign in</button>
+    </form>
+  );
+  return (
+    <form className="login welcome" onSubmit={async (e) => {
+      e.preventDefault();
+      if (busy || !ready) return;
+      setBusy(true); setErr(null);
+      const r = await post("/api/join", { code, display_name: name.trim(), username: username.trim(), password });
+      setBusy(false);
+      if (r.ok) onDone(); else { setErr({ text: r.error ?? "", field: r.field }); if (r.field === "code") setOk(null); }
+    }}>
+      <div className="brand"><Logo size={44} /> Seaglass</div>
+      <h1>Join {place}</h1>
+      <p>{ok.invited_by ? `${ok.invited_by} invited you. ` : ""}You get your own account: your notes, tasks, study and assistant are yours, and nobody else in the household can see them.</p>
+      <Field label="Your name" hint="What the assistant calls you.">{(id, h) => <input id={id} aria-describedby={h} autoFocus autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} />}</Field>
+      <Field label="Username" hint="For signing in. Letters, numbers, dots, dashes.">{(id, h) => <input id={id} aria-describedby={h} autoComplete="username" autoCapitalize="none" spellCheck={false} value={username} onChange={(e) => setUsername(e.target.value)} aria-invalid={err?.field === "username"} />}</Field>
+      <Field label="Password" hint="10 characters or more.">{(id, h) => <input id={id} aria-describedby={h} type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={err?.field === "password"} />}</Field>
+      <Field label="Password again" hint={mismatch ? "These don't match yet." : undefined}>{(id, h) => <input id={id} aria-describedby={h} type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} aria-invalid={mismatch} />}</Field>
+      {err && <p className="err" role="alert">{err.text}</p>}
+      <button className="primary" disabled={busy || !ready}>{busy ? "Making your account…" : "Join"}</button>
     </form>
   );
 }

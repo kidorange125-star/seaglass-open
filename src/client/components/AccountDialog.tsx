@@ -7,6 +7,7 @@ import { EDITION } from "../edition";
 import { Logo } from "../icons";
 import { IClose } from "../ui-icons";
 import { Field } from "./Welcome";
+import { HouseholdMembers } from "./HouseholdMembers";
 
 export const SOURCE_URL = "https://github.com/kidorange125-star/seaglass-open";
 
@@ -82,10 +83,8 @@ export function AccountDialog({ onClose }: { onClose: () => void }) {
                         onClick={() => void run("home", async () => { const r = await api.setHousehold({ name: homeName.trim() }); setHome(r.household); }, "Household name saved")}>Save</button>
                     </div>
                   )}</Field>
-                  <ul className="acc-members">
-                    {members.map((m) => <li key={m.id}><b>{m.display_name}</b> <small>{m.username} · {m.role}</small></li>)}
-                  </ul>
-                  <p className="muted acc-note">Family members get their own accounts in Seaglass Open 0.2, once every part of Seaglass keeps each person's notes separate.</p>
+                  <h3>People</h3>
+                  <HouseholdMembers me={me} members={members} onMembers={setMembers} />
                 </>
               )}
             </section>

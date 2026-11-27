@@ -32,6 +32,8 @@ import * as Suggest from "./suggest";
 import * as Pro from "./proactive";
 import * as Thread from "./thread";
 import { handleMcp } from "./mcp";
+import * as Files from "./files";
+import { registerHousehold, registerJoin } from "./household";
 import { asPerson, asSystem, ownerOf, people } from "./scope";
 import { agentCtx } from "./identity";
 import { registerAuthorize } from "./authorize";
@@ -42,9 +44,11 @@ const app = new Hono<HEnv>();
 
 // Setup, sign-in and sign-out (setup.ts): reachable without an account.
 registerAccounts(app);
+// Joining a household with an invite code (household.ts): also reachable without an account.
+registerJoin(app);
 
 app.use("/api/*", async (c, next) => {
-  if (c.req.path === "/api/session" || c.req.path === "/api/login" || c.req.path === "/api/logout" || c.req.path === "/api/setup") return next();
+  if (c.req.path === "/api/session" || c.req.path === "/api/login" || c.req.path === "/api/logout" || c.req.path === "/api/setup" || c.req.path === "/api/join" || c.req.path === "/api/join/check") return next();
   // Quick capture has its own revocable token (it can only add a task or an Inbox line), checked in the handler.
   if (c.req.path === "/api/capture" && c.req.method === "POST" && (c.req.header("Authorization") ?? "").includes("sgc_")) return next();
   const u = await currentUser(c.env, c.req.url, getCookie(c, COOKIE));
@@ -58,6 +62,8 @@ app.use("/api/*", async (c, next) => {
 
 // The signed-in account: name, password, household (setup.ts).
 registerAccountRoutes(app);
+// Invites, roles and removing members (household.ts).
+registerHousehold(app);
 
 app.onError((e, c) => {
   if (e instanceof N.ConflictError) return c.json({ error: "conflict", current: e.current }, 409);
@@ -786,10 +792,24 @@ async function putFile(env: Env, key: string, data: ArrayBuffer, type: string) {
   await env.FILES.put(key, await Vault.sealBytes("files", key, "body", new Uint8Array(data)), { httpMetadata: { contentType: type }, customMetadata: { sealed: await Vault.currentKeyId(), owner: ownerOf(env.DB) ?? "" } });
 }
 
+/** A file opens for the person who uploaded it, and for anyone when it's on a page they shared publicly. */
+async function mayOpenFile(env: Env, obj: R2Object, id: string, url: string, cookie: string | undefined) {
+  const owner = await Files.fileOwner(env, obj);
+  if ((await currentUser(env, url, cookie))?.id === owner) return true;
+  const shared = (await env.DB.prepare("SELECT id, html, cover FROM notes WHERE owner_id = ? AND share_slug IS NOT NULL AND deleted_at IS NULL /*any-owner*/").bind(owner).all<{ id: string; html: string | null; cover: string | null }>()).results;
+  const needle = `/files/${id}/`;
+  for (const n of shared) {
+    const [html, cover] = await Promise.all([Vault.open("notes", n.id, "html", n.html), Vault.open("notes", n.id, "cover", n.cover)]);
+    if (html?.includes(needle) || cover?.includes(needle)) return true;
+  }
+  return false;
+}
+
 app.get("/files/:id/:name", async (c) => {
   const key = `${c.req.param("id")}/${c.req.param("name")}`;
   const obj = await c.env.FILES.get(key);
   if (!obj) return c.text("not found", 404);
+  if (!(await mayOpenFile(c.env, obj, c.req.param("id"), c.req.url, getCookie(c, COOKIE)))) return c.text("not found", 404);
   const plain = await Vault.openBytes("files", key, "body", new Uint8Array(await obj.arrayBuffer()));
   const type = obj.httpMetadata?.contentType ?? "application/octet-stream";
   // Browsers won't show a PDF under a sandbox policy, so a PDF (never HTML: uploads only take the ALLOWED types) gets
@@ -798,7 +818,7 @@ app.get("/files/:id/:name", async (c) => {
   return new Response(plain as BodyInit, {
     headers: {
       "Content-Type": type,
-      "Cache-Control": "public, max-age=31536000, immutable",
+      "Cache-Control": "private, max-age=31536000, immutable",
       "X-Content-Type-Options": "nosniff",
       "Content-Security-Policy": pdf ? "frame-ancestors 'self'" : "sandbox; default-src 'none'",
       ...(pdf ? { "X-Frame-Options": "SAMEORIGIN", "Content-Disposition": `inline; filename="${c.req.param("name").replace(/[^\w.\-]/g, "_")}"` } : {}),
