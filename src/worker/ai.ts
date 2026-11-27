@@ -299,7 +299,7 @@ export async function studySet(env: Env, o: { ids: string[]; mode: SetMode; fres
   if (!playable(set)) throw new ToolError("Claude didn't return usable questions. Try again.");
   const now = Date.now();
   await db.batch([
-    db.prepare("INSERT OR REPLACE INTO study_sets (owner_id, id, mode, data, created_at) VALUES ({owner}, ?,?,?,?)").bind(id, o.mode, await Vault.seal("study_sets", id, "data", JSON.stringify({ source, set })), now),
+    db.prepare("INSERT INTO study_sets (owner_id, id, mode, data, created_at) VALUES ({owner}, ?,?,?,?) ON CONFLICT(id) DO UPDATE SET mode = excluded.mode, data = excluded.data, created_at = excluded.created_at WHERE study_sets.owner_id = excluded.owner_id").bind(id, o.mode, await Vault.seal("study_sets", id, "data", JSON.stringify({ source, set })), now),
     db.prepare("DELETE FROM study_sets WHERE owner_id = {owner} AND (created_at < ?)").bind(now - SET_MAX_AGE),
   ]);
   return { ...set, cached: false, created_at: now };

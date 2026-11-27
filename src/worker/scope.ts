@@ -22,7 +22,8 @@ function wrap(raw: D1Database, check: (sql: string) => string, owner: string | n
     batch: <T = unknown>(stmts: D1PreparedStatement[]) => raw.batch<T>(stmts),
     exec: (sql: string) => raw.exec(check(sql)),
     dump: () => raw.dump(),
-    withSession: (c?: string) => raw.withSession(c as never),
+    // A session would hand back the unwrapped database, so it isn't offered.
+    withSession: () => { throw new ScopeError("withSession isn't available on a scoped database"); },
   } as unknown as D1Database;
   if (owner !== null) OWNER.set(db, owner);
   return db;

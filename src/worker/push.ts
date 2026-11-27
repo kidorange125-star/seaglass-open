@@ -66,7 +66,7 @@ export async function saveSub(db: D1Database, input: { endpoint?: unknown; keys?
   const t = Date.now();
   await db.prepare(
     `INSERT INTO push_subs (owner_id, endpoint, p256dh, auth, tz, label, created_at, seen_at) VALUES ({owner}, ?,?,?,?,?,?,?)
-     ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, tz = excluded.tz, label = excluded.label, seen_at = excluded.seen_at, last_error = NULL`,
+     ON CONFLICT(endpoint) DO UPDATE SET owner_id = excluded.owner_id, p256dh = excluded.p256dh, auth = excluded.auth, tz = excluded.tz, label = excluded.label, seen_at = excluded.seen_at, last_error = NULL`,
   ).bind(endpoint, await Vault.seal("push_subs", endpoint, "p256dh", p256dh), await Vault.seal("push_subs", endpoint, "auth", auth), input.tz, await Vault.seal("push_subs", endpoint, "label", label), t, t).run();
   return { ok: true };
 }
@@ -223,7 +223,7 @@ export async function notificationAction(env: Env, id: string, action: string, t
   const row = await N.getNote(db, id);
   if (!row || !row.parent_id) return { ok: false, error: "not found" };
   if (action === "snooze") {
-    await db.prepare("INSERT INTO push_snooze (owner_id, note_id, fire_at, title, body) VALUES ({owner}, ?,?,?,?) ON CONFLICT(note_id) DO UPDATE SET fire_at = excluded.fire_at")
+    await db.prepare("INSERT INTO push_snooze (owner_id, note_id, fire_at, title, body) VALUES ({owner}, ?,?,?,?) ON CONFLICT(note_id) DO UPDATE SET fire_at = excluded.fire_at WHERE push_snooze.owner_id = excluded.owner_id")
       .bind(id, Date.now() + 10 * 60_000, await Vault.seal("push_snooze", id, "title", row.title || "Untitled"), await Vault.seal("push_snooze", id, "body", "Snoozed reminder")).run();
     return { ok: true };
   }

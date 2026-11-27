@@ -256,7 +256,7 @@ function examPageStmts(db: D1Database, exam: string, subject: string, pages: str
     ...pages.flatMap((id) => [
       db.prepare("INSERT OR IGNORE INTO study_exam_pages (owner_id, exam_id, note_id) VALUES ({owner}, ?,?)").bind(exam, id),
       db.prepare(`INSERT INTO study_pages (owner_id, note_id, subject_id, excluded, pinned, done_at, updated_at) VALUES ({owner}, ?,?,0,0,NULL,?)
-        ON CONFLICT(note_id) DO UPDATE SET subject_id = excluded.subject_id, updated_at = excluded.updated_at`).bind(id, subject, now),
+        ON CONFLICT(note_id) DO UPDATE SET subject_id = excluded.subject_id, updated_at = excluded.updated_at WHERE study_pages.owner_id = excluded.owner_id`).bind(id, subject, now),
     ]),
   ];
 }
@@ -321,7 +321,7 @@ export async function setPage(db: D1Database, noteId: string, b: PagePatch) {
   const excluded = flag(b.excluded, cur.excluded), pinned = flag(b.pinned, cur.pinned);
   const done_at = b.done === undefined ? cur.done_at : b.done ? cur.done_at ?? Date.now() : null;
   await db.prepare(`INSERT INTO study_pages (owner_id, note_id, subject_id, excluded, pinned, done_at, updated_at) VALUES ({owner}, ?,?,?,?,?,?)
-    ON CONFLICT(note_id) DO UPDATE SET subject_id = excluded.subject_id, excluded = excluded.excluded, pinned = excluded.pinned, done_at = excluded.done_at, updated_at = excluded.updated_at`)
+    ON CONFLICT(note_id) DO UPDATE SET subject_id = excluded.subject_id, excluded = excluded.excluded, pinned = excluded.pinned, done_at = excluded.done_at, updated_at = excluded.updated_at WHERE study_pages.owner_id = excluded.owner_id`)
     .bind(noteId, subject_id, excluded, pinned, done_at, Date.now()).run();
   if (toExam) await db.prepare("INSERT OR IGNORE INTO study_exam_pages (owner_id, exam_id, note_id) VALUES ({owner}, ?,?)").bind(toExam.id, noteId).run();
   else if (b.exam === null || b.exam === "") await db.prepare("DELETE FROM study_exam_pages WHERE owner_id = {owner} AND (note_id = ?)").bind(noteId).run();

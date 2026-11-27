@@ -525,8 +525,28 @@ export async function exportAll(db: D1Database) {
   return { app: "seaglass", version: 1, exported_at: now(), notes, comments };
 }
 
+/** Which of these ids someone else in this Seaglass already uses, each paired with a new id to use instead. */
+async function foreignIds(db: D1Database, table: "notes" | "comments", ids: string[]) {
+  const out = new Map<string, string>();
+  for (let i = 0; i < ids.length; i += 50) {
+    const chunk = ids.slice(i, i + 50);
+    if (!chunk.length) continue;
+    const sql = table === "notes"
+      ? `SELECT id FROM notes WHERE owner_id != {owner} AND id IN (${chunk.map(() => "?").join(",")})`
+      : `SELECT id FROM comments WHERE owner_id != {owner} AND id IN (${chunk.map(() => "?").join(",")})`;
+    for (const r of (await db.prepare(sql).bind(...chunk).all<{ id: string }>()).results) out.set(r.id, crypto.randomUUID());
+  }
+  return out;
+}
+
 export async function importAll(db: D1Database, data: { notes?: Note[]; comments?: Record<string, unknown>[] }) {
-  const notes = data.notes ?? [];
+  // An import replaces pages by id, so ids someone else already has (a family member's export brought in here, or a file
+  // made to collide) get new ids: an import can never overwrite another person's page or comment.
+  const renamed = await foreignIds(db, "notes", (data.notes ?? []).map((n) => String(n.id)));
+  const newId = (id: string | null | undefined) => (id ? renamed.get(id) ?? id : id ?? null);
+  const notes = (data.notes ?? []).map((n) => (renamed.size ? { ...n, id: newId(n.id)!, parent_id: newId(n.parent_id) } : n));
+  const renamedC = await foreignIds(db, "comments", (data.comments ?? []).map((c) => String(c.id)));
+  data = { ...data, comments: (data.comments ?? []).map((c) => ({ ...c, id: renamedC.get(String(c.id)) ?? c.id, note_id: newId(String(c.note_id)) })) };
   for (let i = 0; i < notes.length; i += 40) {
     const chunk = notes.slice(i, i + 40);
     const ids = chunk.map((n) => n.id);

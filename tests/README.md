@@ -63,6 +63,7 @@ Start the server with `npm run dev`. The `.dev.vars` mode matters:
 | `python tests/api/capture.test.py` | same as mcp | 33: capture key and endpoint, Inbox and task parsing, transcription, search by meaning, the Waffle/MCP tool |
 | `python tests/api/sync.test.py` | same as mcp | 64: sync over MCP: timestamps (MCP, app and Waffle edits), change feed and cursors, content hash, trash, metadata, safe writes, read_notes, paging, create_database |
 | `python tests/api/hidden.test.py` | same as mcp | 35: Hide from AI: MCP and Waffle can't read, search, list, write, link to or undo hidden pages (or their sub-pages); mentions blanked; AI routes refuse; only the app can toggle it |
+| `python tests/api/households.test.py` | same as mcp, on an EMPTY database (no accounts); set `SEAGLASS_STATE` to the test server's `--persist-to` folder | 29: two people on one copy: B (an account added by SQL) sees none of A's things on any GET route or MCP tool, and naming A's ids changes nothing |
 
 Restart `npm run dev` after changing `.dev.vars`.
 

@@ -49,6 +49,8 @@ app.use("/api/*", async (c, next) => {
   if (c.req.path === "/api/capture" && c.req.method === "POST" && (c.req.header("Authorization") ?? "").includes("sgc_")) return next();
   const u = await currentUser(c.env, c.req.url, getCookie(c, COOKIE));
   if (!u) return c.json({ error: "unauthorized" }, 401);
+  // Backups and encryption upkeep cover everyone's data, so only the household's owner can run or download them.
+  if (/^\/api\/(backups|security)(\/|$)/.test(c.req.path) && u.role !== "owner") return c.json({ error: "Only the household's owner can do this." }, 403);
   // From here on, every query this request makes can only reach this person's things (scope.ts).
   c.env = asPerson(c.env, u.id);
   return next();
@@ -358,7 +360,8 @@ app.put("/api/study/:id/:card", async (c) => {
   if (!(await N.getNote(c.env.DB, id))) return c.json({ error: "not found" }, 404);
   await c.env.DB.prepare(
     `INSERT INTO study (owner_id, note_id, card_id, ease, interval, reps, lapses, due, updated_at) VALUES ({owner}, ?,?,?,?,?,?,?,?)
-     ON CONFLICT(note_id, card_id) DO UPDATE SET ease=excluded.ease, interval=excluded.interval, reps=excluded.reps, lapses=excluded.lapses, due=excluded.due, updated_at=excluded.updated_at`,
+     ON CONFLICT(note_id, card_id) DO UPDATE SET ease=excluded.ease, interval=excluded.interval, reps=excluded.reps, lapses=excluded.lapses, due=excluded.due, updated_at=excluded.updated_at
+     WHERE study.owner_id = excluded.owner_id`,
   ).bind(id, card, s.ease, Math.round(s.interval), Math.round(s.reps), Math.round(s.lapses), s.due, Date.now()).run();
   return c.json({ ok: true });
 });
@@ -915,12 +918,12 @@ function providerFor(base: string) {
   const resource = `${base}/mcp`;
   provider = new OAuthProvider<Env>({
     apiRoute: "/mcp",
-    // An MCP app works for the account that approved it (props.user, authorize.ts). Grants made before accounts were
-    // separate (and the local test token) have none: those belong to the first account.
+    // An MCP app works for the account that approved it (props.user, set by authorize.ts on every grant). Only the local
+    // test token (AUTH_OPEN on localhost) has none: it works as the first account, like the app does there.
     apiHandler: {
       fetch: async (request: Request, env: Env, ctx: ExecutionContext) => {
         const user = (ctx as { props?: { user?: unknown } }).props?.user;
-        const owner = typeof user === "string" && user ? user : (await people(env.DB, devOpen(env, request.url)))[0];
+        const owner = typeof user === "string" && user ? user : devOpen(env, request.url) ? (await people(env.DB, true))[0] : undefined;
         if (!owner) return new Response("unauthorized", { status: 401 });
         return handleMcp(request, asPerson(env, owner), ctx);
       },
@@ -975,7 +978,9 @@ export default {
     try { const n = await Seal.maybeBackfill(env); if (n) console.log("sealed", n, "stored values"); } catch (e) { console.error("sealing failed", e); }
     // Everything below is one person's: run it for each account, each through their own scope.
     const everyone = await people(env.DB, rawEnv.AUTH_OPEN === "1").catch(() => [] as string[]);
-    for (const id of everyone) await forPerson(asPerson(env, id), event.scheduledTime);
+    for (const id of everyone) {
+      try { await forPerson(asPerson(env, id), event.scheduledTime); } catch (e) { console.error("cron failed for one account", e); }
+    }
   },
 } satisfies ExportedHandler<Env>;
 

@@ -65,7 +65,7 @@ export async function putChat(db: D1Database, id: string, title: string, message
   await db.prepare(
     `INSERT INTO chats (owner_id, id, title, messages, text, updated_at) VALUES ({owner}, ?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET title=excluded.title, messages=excluded.messages, text=excluded.text, updated_at=excluded.updated_at
-     WHERE excluded.updated_at >= chats.updated_at`,
+     WHERE excluded.updated_at >= chats.updated_at AND chats.owner_id = excluded.owner_id`,
   ).bind(id, await Vault.seal("chats", id, "title", title.slice(0, 200)), await Vault.seal("chats", id, "messages", json), await Vault.seal("chats", id, "text", chatText(messages)), updated_at).run();
 }
 

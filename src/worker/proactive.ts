@@ -140,7 +140,7 @@ export async function savePrompt(db: D1Database, input: { id?: unknown; name?: u
   const clash = await db.prepare("SELECT id FROM prompts WHERE owner_id = {owner} AND (name = ? AND id != ?)").bind(name, id).first();
   if (clash) throw new Bad(`You already have /${name}`);
   await db.prepare(`INSERT INTO prompts (owner_id, id, name, text, created_at, updated_at) VALUES ({owner}, ?,?,?,?,?)
-    ON CONFLICT(id) DO UPDATE SET name = excluded.name, text = excluded.text, updated_at = excluded.updated_at`).bind(id, name, await Vault.seal("prompts", id, "text", text), t, t).run();
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name, text = excluded.text, updated_at = excluded.updated_at WHERE prompts.owner_id = excluded.owner_id`).bind(id, name, await Vault.seal("prompts", id, "text", text), t, t).run();
   return { id, name, text };
 }
 export const deletePrompt = async (db: D1Database, id: string) => (await db.prepare("DELETE FROM prompts WHERE owner_id = {owner} AND (id = ?)").bind(id).run()).meta.changes > 0;
@@ -161,7 +161,7 @@ export async function saveRoutine(db: D1Database, input: Partial<Record<keyof Ro
   if (!Number.isInteger(days) || days < 1 || days > 127) throw new Bad("Pick at least one day");
   const id = typeof input.id === "string" && UUID.test(input.id) ? input.id : crypto.randomUUID(), t = Date.now();
   await db.prepare(`INSERT INTO routines (owner_id, id, name, prompt, days, time, notify, enabled, created_at, updated_at) VALUES ({owner}, ?,?,?,?,?,?,?,?,?)
-    ON CONFLICT(id) DO UPDATE SET name = excluded.name, prompt = excluded.prompt, days = excluded.days, time = excluded.time, notify = excluded.notify, enabled = excluded.enabled, updated_at = excluded.updated_at`)
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name, prompt = excluded.prompt, days = excluded.days, time = excluded.time, notify = excluded.notify, enabled = excluded.enabled, updated_at = excluded.updated_at WHERE routines.owner_id = excluded.owner_id`)
     .bind(id, await Vault.seal("routines", id, "name", name), await Vault.seal("routines", id, "prompt", prompt), days, time, input.notify === false ? 0 : 1, input.enabled === false ? 0 : 1, t, t).run();
   return (await listRoutines(db)).find((r) => r.id === id)!;
 }
