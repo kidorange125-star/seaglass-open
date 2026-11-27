@@ -5,6 +5,7 @@ import { systemFor } from "./persona";
 import { ownerName } from "./setup";
 import * as Approvals from "./approvals";
 import * as UsageLog from "./usage";
+import * as AiSet from "./aisettings";
 import { agentLabel, modelName } from "./identity";
 import * as N from "./notes";
 import * as Sy from "./sync";
@@ -803,7 +804,8 @@ export async function runAgent(env: Env, p: AgentParams, send: (e: AgentEvent) =
   const mode = authMode(env);
   if (mode === "none") throw new ToolError("no_key");
   // Workload identity federation (preferred) or an API key; "mock" runs the scripted test model.
-  const model = p.voice || p.quick ? "claude-haiku-5-5" : pickModel(p.model);
+  const household = await AiSet.get(env.DB);
+  const model = await AiSet.allowedModel(env.DB, p.voice || p.quick ? "claude-haiku-5-5" : pickModel(p.model));
   const PRICE = MODELS[model].price, SPEED_COST = p.fast ? 2 : 1;
   // The user can pick Waffle instead of Waffle in Settings: same assistant and tools, Waffle's name and its own few lines (persona.ts).
   const persona = (await env.DB.prepare("SELECT value FROM prefs WHERE owner_id = {owner} AND (key = 'persona')").first<{ value: string }>())?.value;
@@ -811,7 +813,7 @@ export async function runAgent(env: Env, p: AgentParams, send: (e: AgentEvent) =
   const rules = await UsageLog.myRules(env.DB);
   const over = await UsageLog.blocked(env.DB);
   if (over) throw new ToolError(over);
-  const web = rules.web && p.web !== false && !p.quick && (await Approvals.permissions(env.DB, Approvals.startingPoint(env))).web !== "never";
+  const web = household.web && rules.web && p.web !== false && !p.quick && (await Approvals.permissions(env.DB, Approvals.startingPoint(env))).web !== "never";
   const feature = p.quick ? "quick action" : p.handoff ? "live voice (stronger model)" : p.voice ? "live voice" : p.via ? "routine" : p.study?.ids.length ? "study chat" : "assistant";
   const call = mode === "mock" ? mockModel() : realModel(claudeClient(env), model, web, systemFor(SYSTEM, persona), { voice: p.voice, fast: p.fast, quick: p.quick });
   // Which agent this is, on every change it makes: "Waffle (Sonnet 5.5)", "Waffle (Haiku 5.5, live voice)"… (identity.ts)

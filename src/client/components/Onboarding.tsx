@@ -7,6 +7,7 @@ import { Logo } from "../icons";
 import { Waffle } from "../waffle";
 import { SetupWizard } from "./Welcome";
 import { FinishRing, type FinishItem } from "./FinishRing";
+import { SetupSteps, type SetupResult } from "./SetupSteps";
 import { api } from "../api";
 
 type Goal = "study" | "notes" | "tasks" | "family";
@@ -15,19 +16,23 @@ const KEY = "sg.onboard";
 const load = (): Saved => { try { return { title: "", body: "", goals: [], ...JSON.parse(localStorage.getItem(KEY) ?? "{}") }; } catch { return { title: "", body: "", goals: [] }; } };
 const keep = (s: Saved) => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* private window */ } };
 
-const STEPS = ["hello", "write", "study", "waffle", "goals", "setup", "finish"] as const;
+const STEPS = ["hello", "write", "study", "waffle", "goals", "setup", "more", "finish"] as const;
 type Step = (typeof STEPS)[number];
 
 export function Onboarding({ codeRequired, noTables, onDone }: { codeRequired: boolean; noTables: boolean; onDone: () => void }) {
   const [step, setStep] = useState<Step>("hello");
   const [saved, setSaved] = useState<Saved>(load);
+  const [home, setHome] = useState(false);
+  const [setup, setSetup] = useState<SetupResult>({ ai: "on", invited: 0, reminders: false });
   const save = (p: Partial<Saved>) => setSaved((s) => { const n = { ...s, ...p }; keep(n); return n; });
   const go = (s: Step) => { setStep(s); window.scrollTo?.(0, 0); };
   const tryIdx = ["write", "study", "waffle", "goals"].indexOf(step);
 
   if (noTables) return <SetupWizard codeRequired={codeRequired} noTables onDone={onDone} />;
-  if (step === "setup") return <SetupWizard codeRequired={codeRequired} initialMode={saved.goals.includes("family") ? "household" : undefined} onDone={() => go("finish")} onBack={() => go("goals")} />;
-  if (step === "finish") return <Finish saved={saved} onDone={() => { try { localStorage.removeItem(KEY); } catch { /* fine */ } onDone(); }} />;
+  if (step === "setup") return <SetupWizard codeRequired={codeRequired} initialMode={saved.goals.includes("family") ? "household" : undefined} onDone={(mode) => { setHome(mode === "household"); go("more"); }} onBack={() => go("goals")} />;
+  // After the account: AI, the assistant, the household and this device (SetupSteps), then the closing animation.
+  if (step === "more") return <SetupSteps household={home} onDone={(r) => { setSetup(r); go("finish"); }} />;
+  if (step === "finish") return <Finish saved={saved} setup={setup} onDone={() => { try { localStorage.removeItem(KEY); } catch { /* fine */ } onDone(); }} />;
 
   return (
     <div className="ob">
@@ -196,16 +201,18 @@ function Goals({ goals, onChange, onNext }: { goals: Goal[]; onChange: (g: Goal[
 }
 
 /** After the account exists: make the first page and the starters while the ring plays, then open the app. */
-function Finish({ saved, onDone }: { saved: Saved; onDone: () => void }) {
+function Finish({ saved, setup, onDone }: { saved: Saved; setup: SetupResult; onDone: () => void }) {
   const items = useMemo<FinishItem[]>(() => {
     const l: FinishItem[] = [{ id: "account", label: "Your account", icon: "logo" }];
     if (saved.title.trim() || saved.body.trim()) l.push({ id: "page", label: "Your first page", icon: "📝" });
     if (saved.goals.includes("study")) l.push({ id: "study", label: "Flashcards to try", icon: "📚" });
     if (saved.goals.includes("tasks") || !saved.goals.length) l.push({ id: "tasks", label: "My tasks", icon: "✅" });
     if (saved.goals.includes("family")) l.push({ id: "calendar", label: "Your calendar", icon: "📅" });
-    l.push({ id: "waffle", label: "Waffle", icon: "waffle" });
+    if (setup.invited) l.push({ id: "people", label: setup.invited === 1 ? "An invite" : `${setup.invited} invites`, icon: "👪" });
+    if (setup.reminders) l.push({ id: "reminders", label: "Reminders", icon: "🔔" });
+    if (setup.ai === "on") l.push({ id: "waffle", label: "Waffle", icon: "waffle" });
     return l;
-  }, [saved]);
+  }, [saved, setup]);
   const [work, setWork] = useState<Promise<string | null> | null>(null);
   useEffect(() => {
     setWork((async () => {

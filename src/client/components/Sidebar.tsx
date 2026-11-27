@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { inFamily, spaceHref, spaceKey } from "../space";
-import { homeName, isHousehold } from "../me";
+import { homeName, isHousehold, showAssistant } from "../me";
 import { useMemo, useRef, useState, type ReactElement } from "react";
 import { MovePicker } from "./MovePicker";
 import { EDITION } from "../edition";
@@ -205,7 +205,7 @@ export function Sidebar() {
         <a className={`sb-btn ${s.route.kind === "tasks" ? "active" : ""}`} href="#/tasks" onClick={afterNav}><ICheckSquare size={S} /> {inFamily ? "Family tasks" : "My tasks"} {due > 0 && <span className="sb-count" title={`${due} due today or earlier`}>{due}</span>}</a>
           {EDITION.calendar && <a className={`sb-btn ${s.route.kind === "calendar" ? "active" : ""}`} href="#/calendar" onClick={afterNav}><ICalendar size={S} /> Calendar</a>}
         {!inFamily && <a className={`sb-btn ${s.route.kind === "study" ? "active" : ""}`} href="#/study" onClick={afterNav}><IStudy size={S} /> Study</a>}
-        {!inFamily && <button className={`sb-btn ${s.agentOpen ? "active" : ""}`} title={`Ask ${agentName()} (Ctrl+J)`} onClick={() => { s.setAgentOpen(!s.agentOpen); afterNav(); }}><span className="sb-jeff"><JeffFace size={19} /></span> {agentName()}{unread > 0 && <span className="sb-badge" title={`${unread} new from ${agentName()}`}>{unread}</span>}</button>}
+        {showAssistant() && <button className={`sb-btn ${s.agentOpen ? "active" : ""}`} title={`Ask ${agentName()} (Ctrl+J)`} onClick={() => { s.setAgentOpen(!s.agentOpen); afterNav(); }}><span className="sb-jeff"><JeffFace size={19} /></span> {agentName()}{unread > 0 && <span className="sb-badge" title={`${unread} new from ${agentName()}`}>{unread}</span>}</button>}
       </div>
       <div className="sb-scroll">
         {favorites.length > 0 && section("fav", "Favorites", <>{favorites.map((n) => renderRow(n, 0, "fav:"))}</>)}
@@ -238,7 +238,7 @@ export function Sidebar() {
         <a className={`sb-btn ${s.route.kind === "trash" ? "active" : ""}`} href="#/trash" onClick={afterNav}><ITrash size={S} /> Trash</a>
       </div>
       <div className="sb-chat">
-        {!inFamily && <button className="sb-newchat" title={`Talk to ${agentName()} (Ctrl+J)`} onClick={() => { s.setAgentOpen(true); afterNav(); }}><JeffFace size={18} /> Ask {agentName()} <kbd>Ctrl J</kbd></button>}
+        {showAssistant() && <button className="sb-newchat" title={`Talk to ${agentName()} (Ctrl+J)`} onClick={() => { s.setAgentOpen(true); afterNav(); }}><JeffFace size={18} /> Ask {agentName()} <kbd>Ctrl J</kbd></button>}
         <button className="sb-compose" title="New page (Ctrl+Alt+N)" onClick={async () => { await s.newPage(); afterNav(); }}><ICompose size={20} /></button>
       </div>
       <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={(e) => { setSettings(null); void restoreInput(e.target.files?.[0]); }} />

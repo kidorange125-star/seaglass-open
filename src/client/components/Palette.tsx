@@ -1,6 +1,7 @@
 // Search, in the spirit of macOS Spotlight: one glass bar, a Top Hit picked by score, and when nothing fits
 // (or what you typed reads like a question) an "Ask Jeff" tab slides in. Tab switches to it; Enter asks.
 import { inFamily } from "../space";
+import { showAssistant } from "../me";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { startFocus } from "./StudyTools";
 import { Moon, PanelLeft, Zap } from "lucide-react";
@@ -80,7 +81,7 @@ export function Palette() {
       ...(EDITION.calendar ? [{ key: "c-cal", kind: "command" as const, icon: <ICalendar size={20} />, title: "Calendar", run: () => s.go("/calendar") }] : []),
       { key: "c-db", kind: "command", icon: <IDatabase size={20} />, title: "New database", run: () => void s.newPage({ kind: "database", title: "Untitled database" }) },
       { key: "c-home", kind: "command", icon: <IHome size={20} />, title: "Go home", run: () => s.go("/") },
-      ...(inFamily ? [] : [{ key: "c-jeff", kind: "command" as const, icon: <JeffFace size={20} />, title: `Ask ${agentName()}`, hint: "Ctrl J", run: () => s.setAgentOpen(true) }]),
+      ...(!showAssistant() ? [] : [{ key: "c-jeff", kind: "command" as const, icon: <JeffFace size={20} />, title: `Ask ${agentName()}`, hint: "Ctrl J", run: () => s.setAgentOpen(true) }]),
       ...(inFamily ? [] : [{ key: "c-grades", kind: "command" as const, icon: <ICheckSquare size={20} />, title: "Grades", run: async () => { const r = await api.ensureGrades(); await s.refreshTree(); s.go(`/p/${r.id}`); } }]),
       ...(inFamily ? [] : [{ key: "c-review", kind: "command" as const, icon: <ICheckSquare size={20} />, title: "Weekly review", run: () => s.go("/review") }]),
       ...(inFamily ? [] : [{ key: "c-focus", kind: "command" as const, icon: <ICheckSquare size={20} />, title: "Start a 25 minute focus timer", run: () => startFocus("Focus") }]),
@@ -111,7 +112,7 @@ export function Palette() {
     const all = [...pages, ...text, ...cmds].sort((a, b) => b.score - a.score);
     const best = all[0];
     const question = looksLikeQuestion(query);
-    const action = !inFamily && looksLikeAction(query); // the assistant is personal, not part of the Family space
+    const action = showAssistant() && looksLikeAction(query); // the assistant is personal, not part of the Family space
     // An exact or near-exact title or command (85+) is what the user meant, even if it reads like a question or an instruction
     // ("Record a voice note", a page called "Plan for finals").
     const strong = !!best && best.score >= 85;

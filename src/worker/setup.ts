@@ -10,6 +10,8 @@ import {
   loginFailed, loginLocked, loginOk, passwordProblem, safeEqual, usernameProblem, type User,
 } from "./auth";
 import { requireOwner } from "./scope";
+import * as AiSet from "./aisettings";
+import { authMode } from "./claude-auth";
 
 export type Household = { mode: "individual" | "household"; name: string };
 
@@ -45,7 +47,8 @@ export function registerAccounts(app: Hono<{ Bindings: Env }>) {
       return c.json({ authed: false, setup: true, code_required: !local || !!c.env.SETUP_CODE, code_set: !!c.env.SETUP_CODE });
     }
     const u = await currentUser(c.env, c.req.url, getCookie(c, COOKIE));
-    return c.json({ authed: !!u, setup: false, user: u ? publicUser(u) : null, household: await household(c.env.DB) });
+    const ai = u ? await AiSet.get(c.env.DB) : null;
+    return c.json({ authed: !!u, setup: false, user: u ? publicUser(u) : null, household: await household(c.env.DB), ...(ai ? { ai: { mode: ai.mode, connected: authMode(c.env) !== "none" } } : {}) });
   });
 
   app.post("/api/setup", async (c) => {

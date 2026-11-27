@@ -34,7 +34,7 @@ import { Dialogs } from "./components/ui";
 import { bootDone } from "./boot";
 import { JoinHousehold, SignIn } from "./components/Welcome";
 import { Onboarding } from "./components/Onboarding";
-import { setHome, setMe } from "./me";
+import { setAi, setHome, setMe, showAssistant } from "./me";
 import { inFamily } from "./space";
 import { CalendarView } from "./components/CalendarView";
 
@@ -59,7 +59,7 @@ function Shell() {
       const act = (fn: () => void) => { e.preventDefault(); fn(); };
       if ((key === "k" || key === "p") && !e.shiftKey && !e.altKey) act(() => s.setPaletteOpen(!s.paletteOpen));
       else if (e.key === "\\") act(s.toggleSidebar);
-      else if (key === "j" && !e.shiftKey && !inFamily) act(() => s.setAgentOpen(!s.agentOpen));
+      else if (key === "j" && !e.shiftKey && showAssistant()) act(() => s.setAgentOpen(!s.agentOpen));
       else if (e.altKey && key === "n") act(() => void s.newPage());
       else if (e.key === "[" && !e.shiftKey) act(() => history.back());
       else if (e.key === "]" && !e.shiftKey) act(() => history.forward());
@@ -110,7 +110,7 @@ function Shell() {
     addEventListener("keydown", esc); return () => removeEventListener("keydown", esc);
   }, [s.peekId]); // eslint-disable-line react-hooks/exhaustive-deps
   const tabSel = inFamily ? (s.route.kind === "home" ? 0 : s.route.kind === "tasks" ? 1 : s.route.kind === "calendar" ? 2 : -1)
-    : s.agentOpen ? 2 : s.route.kind === "home" ? 0 : s.route.kind === "study" ? 1 : -1;
+    : s.agentOpen ? 2 : s.route.kind === "home" ? 0 : s.route.kind === "study" ? 1 : !showAssistant() && s.route.kind === "tasks" ? 2 : -1;
   return (
     <div className={`app route-${s.route.kind} ${s.sidebarOpen ? "" : "collapsed"} ${s.agentOpen ? "has-agent" : ""}`}>
       {s.sidebarOpen && <Sidebar />}
@@ -136,13 +136,15 @@ function Shell() {
             <a href="#/calendar" className={tabSel === 2 ? "on" : ""}><ICalendar size={24} /><span>Calendar</span></a>
           </> : <>
             <a href="#/study" className={tabSel === 1 ? "on" : ""}><IStudy size={24} /><span>Study</span></a>
-            <button className={tabSel === 2 ? "on" : ""} onClick={() => s.setAgentOpen(!s.agentOpen)}><span className="tab-jeff"><JeffFace size={22} /></span><span>{agentName()}</span></button>
+            {showAssistant()
+              ? <button className={tabSel === 2 ? "on" : ""} onClick={() => s.setAgentOpen(!s.agentOpen)}><span className="tab-jeff"><JeffFace size={22} /></span><span>{agentName()}</span></button>
+              : <a href="#/tasks" className={tabSel === 2 ? "on" : ""}><ICheckSquare size={24} /><span>Tasks</span></a>}
           </>}
           <button onClick={() => void s.newPage()}><ICompose size={24} /><span>New</span></button>
         </div>
         <button className="tb-search" aria-label="Search" onClick={() => s.setPaletteOpen(true)}><ISearch size={24} /><span>Search</span></button>
       </nav>
-      {!s.agentOpen && !inFamily && <button className="jeff-fab" title={`Ask ${agentName()} (Ctrl+J)`} onClick={() => s.setAgentOpen(true)}><JeffAvatar size={40} />{unread > 0 && <span className="fab-badge">{unread}</span>}</button>}
+      {!s.agentOpen && showAssistant() && <button className="jeff-fab" title={`Ask ${agentName()} (Ctrl+J)`} onClick={() => s.setAgentOpen(true)}><JeffAvatar size={40} />{unread > 0 && <span className="fab-badge">{unread}</span>}</button>}
       {s.pick && <StudyPick key={`${s.pick.kind}-${s.pick.id}`} target={s.pick} />}
       {s.studyId && <StudyView key={JSON.stringify(s.studyId)} target={s.studyId} />}
       {s.drill && <DrillView key={`${s.drill.ids.join()}-${s.drill.mode}-${s.drill.nonce ?? 0}`} drill={s.drill} />}
@@ -157,7 +159,7 @@ function Shell() {
       {s.explain && <ExplainView key={s.explain.nonce} target={s.explain} />}
       {s.quiz && <QuizView key={`${s.quiz.join()}-${s.quizResume}`} ids={s.quiz} replay={s.quizReplay ?? undefined} resume={s.quizResume} />}
       {s.past && <StudyHistory target={s.past} />}
-      {!inFamily && <AgentPanel />}
+      {showAssistant() && <AgentPanel />}
       <Palette />
       <Dialogs />
     </div>
@@ -175,7 +177,7 @@ export function App() {
     if (r.setup) { setCodeRequired(!!r.code_required); setNoTables(!!r.no_tables); setView("setup"); }
     else if (r.authed && r.user && (await forgetOtherPerson(r.user.id))) location.reload(); // someone else used this device last
     else if (inFamily && r.authed && r.household?.mode !== "household") location.href = location.pathname; // no Family space outside a household
-    else { setMe(r.user); setHome(r.household); if (inFamily) document.documentElement.dataset.space = "family"; setView(r.authed ? "app" : joinCode() ? "join" : "signin"); }
+    else { setMe(r.user); setHome(r.household); setAi(r.ai); if (inFamily) document.documentElement.dataset.space = "family"; setView(r.authed ? "app" : joinCode() ? "join" : "signin"); }
   }).catch((e) => {
     if (e instanceof ApiError && e.status === 503 && e.message === "no_data_key") setView("nokey");
     else setView(isNetworkError(e) ? "app" : "signin"); // offline: carry on with what's cached (an API 401 later still shows sign-in)

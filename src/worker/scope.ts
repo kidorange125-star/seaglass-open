@@ -10,7 +10,7 @@ export const PERSONAL = ["notes", "actions", "links", "comments", "changes", "st
   "study_sessions", "study_exams", "study_exam_pages", "study_misses", "agent_approvals", "ai_usage"];
 /** Tables that belong to the whole copy, not to one person. Every table is in exactly one of the two lists (npm run
  *  check:scope fails on a table in neither, so a new one can't slip past both guards). */
-export const SYSTEM_TABLES = ["users", "sessions", "login_attempts", "invites", "person_rules"];
+export const SYSTEM_TABLES = ["users", "sessions", "login_attempts", "invites", "person_rules", "household_keys"];
 // A table name may be quoted ("notes", `notes`, [notes]) or carry its schema (main.notes).
 const TOUCHES = new RegExp(String.raw`\b(?:FROM|INTO|UPDATE|JOIN|TABLE)\s+(?:main\.)?["\x60\[]?(?:${PERSONAL.join("|")})["\x60\]]?(?![\w])`, "i");
 // A person's id, the test user "dev", the shared Family space ("family", src/shared/space.ts), or '' for the household.

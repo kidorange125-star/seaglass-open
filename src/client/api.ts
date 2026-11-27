@@ -88,9 +88,16 @@ export interface Rules { daily_usd: number | null; monthly_usd: number | null; w
 export interface UsageLine { name: string; label?: string; calls: number; cost_usd: number }
 export interface MyUsage { date: string; today: number; month: number; household_month: number; by_feature: UsageLine[]; by_model: UsageLine[]; days: { day: string; cost_usd: number; calls: number }[]; rules: Rules }
 export interface HouseholdUsage { people: { id: string; name: string; username: string; role: string; today: number; month: number; calls: number; rules: Rules }[]; household: { month: number; rules: Rules } }
+/** The household's AI choices and keys (Setup and Settings > Setup & status). Key values are never sent back. */
+export interface AiSetup {
+  settings: { mode: "on" | "later" | "off"; models: string[]; web: boolean };
+  mode: string; connected: boolean; owner: boolean; default_model: string;
+  models: { id: string; label: string; blurb: string }[];
+  keys: { name: string; label: string; example: string; source: "secret" | "saved" | null; saved: boolean; hint: string; updated_at: number | null }[];
+}
 export interface NewInvite { code: string; link: string; role: string; expires_at: number }
 export interface Household { mode: "individual" | "household"; name: string }
-export interface SessionInfo { authed: boolean; setup?: boolean; no_tables?: boolean; code_required?: boolean; code_set?: boolean; user?: Account | null; household?: Household }
+export interface SessionInfo { ai?: { mode: "on" | "later" | "off"; connected: boolean }; authed: boolean; setup?: boolean; no_tables?: boolean; code_required?: boolean; code_set?: boolean; user?: Account | null; household?: Household }
 export interface RunSummary { run_id: string; source: string; agents: string[]; started_at: number; n: number; undone: number; state: "applied" | "undone" | "partial"; summary: string[] }
 export type RunResult = { ok: true; run_id: string; changed: number } | { ok: false; error: string; conflicts?: { id: string; title: string }[] };
 
@@ -144,6 +151,10 @@ export const api = {
   setRole: (id: string, role: "adult" | "owner" | "kid") => call<{ ok: boolean }>(`/api/household/members/${id}`, { method: "PATCH", body: j({ role }) }),
   resetPassword: (id: string, password: string) => call<{ ok: boolean }>(`/api/household/members/${id}/password`, { method: "POST", body: j({ password }) }),
   usage: () => call<MyUsage>("/api/usage"),
+  setupAi: () => call<AiSetup>("/api/setup/ai"),
+  saveAiSettings: (p: Partial<AiSetup["settings"]>) => call<AiSetup["settings"]>("/api/setup/ai", { method: "PUT", body: j(p) }),
+  saveKey: (name: string, value: string) => call<{ ok: boolean }>(`/api/setup/keys/${name}`, { method: "PUT", body: j({ value }) }),
+  removeKey: (name: string) => call<{ ok: boolean }>(`/api/setup/keys/${name}`, { method: "DELETE" }),
   householdUsage: () => call<HouseholdUsage>("/api/household/usage"),
   setRules: (id: string, rules: Partial<Rules>) => call<Rules>(`/api/household/rules/${id}`, { method: "PUT", body: j(rules) }),
   removeMember: (id: string, confirm: string) => call<{ ok: boolean; left: boolean }>(`/api/household/members/${id}`, { method: "DELETE", body: j({ confirm }) }),

@@ -35,6 +35,8 @@ import { handleMcp } from "./mcp";
 import { FAMILY, SPACE_PREFIX, familyAllows } from "../shared/space";
 import * as Files from "./files";
 import * as Usage from "./usage";
+import * as Keys from "./keys";
+import * as AiSet from "./aisettings";
 import { registerHousehold, registerJoin } from "./household";
 import { asPerson, asSystem, ownerOf, people } from "./scope";
 import { agentCtx } from "./identity";
@@ -57,6 +59,7 @@ app.use("/api/*", async (c, next) => {
   if (!u) return c.json({ error: "unauthorized" }, 401);
   // Backups and encryption upkeep cover everyone's data, so only the household's owner can run or download them.
   if (/^\/api\/(backups|security)(\/|$)/.test(c.req.path) && u.role !== "owner") return c.json({ error: "Only the household's owner can do this." }, 403);
+  if (AiSet.AI_ROUTE.test(c.req.path) && (await AiSet.get(c.env.DB)).mode === "off") return c.json({ error: AiSet.OFF_MESSAGE }, 403);
   if (c.env.SPACE === FAMILY) {
     // The shared Family space: for everyone in a household, and only for pages, databases, tasks and the calendar.
     if ((await household(c.env.DB)).mode !== "household") return c.json({ error: "The Family space is for households. Switch to a household in Settings first." }, 403);
@@ -623,6 +626,40 @@ app.post("/api/routines/:id/run", async (c) => {
 app.get("/api/security/status", async (c) => c.json(await Seal.status(c.env)));
 app.post("/api/security/seal-all", async (c) => c.json(await Seal.sealNow(c.env)));
 
+// Setup & status: the household's AI choices and the keys saved in the app (owners change them; never sent back).
+app.get("/api/setup/ai", async (c) => {
+  const u = await currentUser(c.env, c.req.url, getCookie(c, COOKIE));
+  const owner = u?.role === "owner";
+  const models = Object.entries(MODELS).map(([id, m]) => ({ id, label: m.label, blurb: m.blurb }));
+  return c.json({ settings: await AiSet.get(c.env.DB), mode: authMode(c.env), connected: authMode(c.env) !== "none", models, default_model: MODEL, owner, keys: owner ? await Keys.status(c.env) : [] });
+});
+app.put("/api/setup/ai", async (c) => {
+  const u = await currentUser(c.env, c.req.url, getCookie(c, COOKIE));
+  if (u?.role !== "owner") return c.json({ error: "Only the household's owner can do this." }, 403);
+  try { return c.json(await AiSet.set(c.env.DB, await body<Record<string, unknown>>(c))); }
+  catch (e) { return c.json({ error: (e as Error).message }, 400); }
+});
+app.put("/api/setup/keys/:name", async (c) => {
+  const u = await currentUser(c.env, c.req.url, getCookie(c, COOKIE));
+  if (u?.role !== "owner") return c.json({ error: "Only the household's owner can do this." }, 403);
+  const name = c.req.param("name");
+  if (!Keys.isKeyName(name)) return c.json({ error: "not found" }, 404);
+  const b = await body<{ value?: unknown }>(c);
+  // The local test suites can't reach Claude with a made-up key: AUTH_OPEN on localhost skips the live check.
+  const bad = await Keys.save(c.env, name, b.value, u.id, !devOpen(c.env, c.req.url));
+  if (bad) return c.json({ error: bad, field: "value" }, 400);
+  if (name === "ANTHROPIC_API_KEY") await AiSet.set(c.env.DB, { mode: "on" });
+  return c.json({ ok: true });
+});
+app.delete("/api/setup/keys/:name", async (c) => {
+  const u = await currentUser(c.env, c.req.url, getCookie(c, COOKIE));
+  if (u?.role !== "owner") return c.json({ error: "Only the household's owner can do this." }, 403);
+  const name = c.req.param("name");
+  if (!Keys.isKeyName(name)) return c.json({ error: "not found" }, 404);
+  await Keys.remove(c.env, name);
+  return c.json({ ok: true });
+});
+
 // AI usage (usage.ts): your own, and for owners everyone's totals (numbers only) and the limits they set.
 app.get("/api/usage", async (c) => c.json(await Usage.mine(c.env.DB)));
 
@@ -995,6 +1032,7 @@ export default {
       const detail = e instanceof Vault.VaultError && e.message !== "no_data_key" ? e.message : "No data key is set. Make one with: npm run data:keygen -- --out <file> --put";
       return Response.json({ error: "no_data_key", detail }, { status: 503 });
     }
+    env = await Keys.fill(env); // keys saved in the app (keys.ts); a Worker secret of the same name wins
     const base = (env.PUBLIC_URL || new URL(request.url).origin).replace(/\/+$/, "");
     // The Family space: /api/s/family/<route> is the normal /api/<route>, run in the shared scope (checked in the
     // sign-in middleware below, which also refuses any route that isn't meant for it).
@@ -1011,6 +1049,7 @@ export default {
   // Every minute (see triggers in wrangler.jsonc): task notifications. Once a day, at 04:17 UTC, also drop
   // expired OAuth tokens and grants from KV.
   async scheduled(event: ScheduledController, rawEnv: Env, ctx: ExecutionContext) {
+    try { await Vault.configure(rawEnv); rawEnv = await Keys.fill(rawEnv); } catch { /* reported just below */ }
     const env = asSystem(rawEnv);
     try { await Vault.configure(env); } catch (e) { console.error("no usable DATA_KEY: skipping this run", e instanceof Error ? e.message : e); return; }
     const at = new Date(event.scheduledTime);

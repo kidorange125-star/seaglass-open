@@ -7,6 +7,7 @@ import type { Env } from "./env";
 import { authMode, claudeClient } from "./claude-auth";
 import { MODELS, pickModel, PAGE_FORMAT, ToolError } from "./agent";
 import * as Usage from "./usage";
+import * as AiSet from "./aisettings";
 import * as N from "./notes";
 import { agentCtx } from "./identity";
 import { blankMentions, HIDDEN_SQL, HiddenError } from "./hidden";
@@ -145,8 +146,9 @@ export async function complete(env: Env, o: { kind: Kind; model?: unknown; syste
   if (mode === "none") throw new ToolError("Waffle isn't connected to Claude yet (Settings, then Setup & status).");
   const over = await Usage.blocked(env.DB);
   if (over) throw new ToolError(over);
-  if (mode === "mock") { await Usage.record(env.DB, o.kind, pickModel(o.model)); return MOCK[o.kind](typeof o.content === "string" ? o.content : JSON.stringify(o.content.filter((b) => b.type === "text"))); }
-  const model = pickModel(o.model);
+  const allowed = await AiSet.allowedModel(env.DB, pickModel(o.model));
+  if (mode === "mock") { await Usage.record(env.DB, o.kind, allowed); return MOCK[o.kind](typeof o.content === "string" ? o.content : JSON.stringify(o.content.filter((b) => b.type === "text"))); }
+  const model = allowed;
   const r = await claudeClient(env).messages.create({
     model, max_tokens: o.maxTokens ?? 4000, system: o.system,
     messages: [{ role: "user", content: o.content }],

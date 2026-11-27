@@ -107,7 +107,7 @@ export function JoinHousehold({ code: initial, onDone, onBack }: { code: string;
 
 type Mode = "individual" | "household";
 
-export function SetupWizard({ codeRequired, noTables = false, initialMode, onDone, onBack }: { codeRequired: boolean; noTables?: boolean; initialMode?: "individual" | "household"; onDone: () => void; onBack?: () => void }) {
+export function SetupWizard({ codeRequired, noTables = false, initialMode, onDone, onBack }: { codeRequired: boolean; noTables?: boolean; initialMode?: "individual" | "household"; onDone: (mode: "individual" | "household") => void; onBack?: () => void }) {
   const [step, setStep] = useState<1 | 2>(1);
   const [mode, setMode] = useState<Mode | null>(initialMode ?? null);
   const [code, setCode] = useState("");
@@ -127,7 +127,7 @@ export function SetupWizard({ codeRequired, noTables = false, initialMode, onDon
     setBusy(true); setErr(null);
     const r = await post("/api/setup", { code: code.trim() || undefined, mode, household_name: home.trim(), display_name: name.trim(), username: username.trim(), password });
     setBusy(false);
-    if (r.ok) onDone(); else setErr({ text: r.error ?? "", field: r.field });
+    if (r.ok) onDone(mode); else setErr({ text: r.error ?? "", field: r.field });
   };
 
   if (noTables) return (
@@ -180,7 +180,7 @@ export function SetupWizard({ codeRequired, noTables = false, initialMode, onDon
           {err && <p className="err" role="alert">{err.text}</p>}
           <div className="w-actions">
             <button type="button" className="ghost" onClick={() => setStep(1)}>Back</button>
-            <button className="primary" disabled={!ready || busy}>{busy ? "Setting up…" : "Finish setup"}</button>
+            <button className="primary" disabled={!ready || busy}>{busy ? "Making your account…" : "Make my account"}</button>
           </div>
         </form>
       )}

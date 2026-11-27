@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Copy, Loader2, PlugZap, ShieldCheck, X } from "lucide-react";
 import { api, type SetupData } from "../api";
 import { useStore } from "../store";
+import { AiSettings } from "./AiSettings";
 
 // Setup & status: what's configured, what's missing, and the exact values to paste into
 // Claude and the Claude Console. See docs/SETUP.md for the full walkthrough.
@@ -29,6 +30,7 @@ export function SetupModal({ onClose }: { onClose: () => void }) {
         <div className="su-head"><b><ShieldCheck size={18} /> Setup & status</b><button className="ghost icon-btn" onClick={onClose}><X size={17} /></button></div>
         {!d ? <div className="su-loading"><Loader2 size={18} className="spin" /> Checking…</div> : (
           <div className="su-body">
+            <AiSettings toast={s.toast} />
             <ul className="su-checks">
               {d.checks.map((c) => (
                 <li key={c.id} className={c.ok ? "ok" : "warn"}>
