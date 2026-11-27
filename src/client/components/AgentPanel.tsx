@@ -20,7 +20,8 @@ import { Popover } from "./ui";
 import { agentName, usePersona } from "../persona";
 import { expandSaved, setUnread, useSavedPrompts } from "../proactive";
 
-interface ToolCard { id: string; name: string; label: string; status: "running" | "ok" | "error"; noteIds: string[]; game?: GameLink }
+interface ToolCard { id: string; name: string; label: string; status: "running" | "ok" | "error"; noteIds: string[]; game?: GameLink; approval?: Approval }
+export interface Approval { id: string; detail: string; state: "asking" | "sending" | "approved" | "denied" }
 interface Msg {
   key: string; id?: string; seq?: number; created_at: number;
   role: "user" | "assistant" | "divider" | "system"; kind: "chat" | "proactive" | "routine" | "divider" | "note";
@@ -317,6 +318,8 @@ export function AgentPanel() {
       else if (e.type === "working") startWork();
       else if (e.type === "tool_start") startWork(), patch(aKey, (m) => ({ ...m, tools: [...m.tools, { id: e.id, name: e.name, label: e.label, status: "running", noteIds: [] }] }));
       else if (e.type === "tool_result") { patch(aKey, (m) => ({ ...m, tools: m.tools.map((t) => (t.id === e.id ? { ...t, status: e.ok ? "ok" : "error", label: e.label, noteIds: e.note_ids, game: e.game } : t)) })); if (e.ok && ((e.note_ids.length && !/^(search|list|read)/.test(e.name)) || /^(manage_subject|update_study_page|plan_study_sessions)$/.test(e.name))) announce(); }
+      else if (e.type === "approval") { stopWork(); patch(aKey, (m) => ({ ...m, tools: m.tools.map((t) => (t.id === e.tool_id ? { ...t, approval: { id: e.id, detail: e.detail, state: "asking" } } : t)) })); }
+      else if (e.type === "approval_done") { startWork(); patch(aKey, (m) => ({ ...m, tools: m.tools.map((t) => (t.id === e.tool_id && t.approval ? { ...t, approval: { ...t.approval, state: e.ok ? "approved" : "denied" } } : t)) })); }
       else if (e.type === "done") stopWork(), patch(aKey, (m) => ({ ...m, state: "done", runId: e.run_id, changes: e.changes, cost: e.usage.cost_usd }));
       else if (e.type === "error") stopWork(), patch(aKey, (m) => ({ ...m, state: "error", error: e.message }));
       else if (e.type === "saved") patch(e.reply ? aKey : uKey, (m) => ({ ...m, id: e.id, seq: e.seq }));
@@ -437,6 +440,7 @@ export function AgentPanel() {
                         })}
                       </div>
                     )}
+                    {m.tools.filter((t) => t.approval).map((t) => <ApprovalCard key={`ap-${t.id}`} a={t.approval!} onChange={(state) => patch(m.key, (x) => ({ ...x, tools: x.tools.map((y) => (y.id === t.id && y.approval ? { ...y, approval: { ...y.approval, state } } : y)) }))} />)}
                     {m.text && <div className="tx-bubble them ag-md" title={clockOf(m.created_at)} dangerouslySetInnerHTML={renderMd(m.text)} />}
                     {m.tools.filter((t) => t.game).map((t) => <div key={t.id} className="tx-chips"><button className="primary" onClick={() => { s.setAgentOpen(false); s.setDrill({ ...t.game!, nonce: Date.now() }); }}>Play it now</button></div>)}
                     {m.state === "streaming" && !m.text && <div className="tx-bubble them tx-typing" aria-label={m.tools.length ? "Working" : "Typing"}><i /><i /><i /></div>}
@@ -526,5 +530,24 @@ export function AgentPanel() {
       </div>
       {s.liveVoice && <LiveVoice />}
     </aside>
+  );
+}
+
+/** The assistant asking before it acts (worker/approvals.ts): what it wants to do, then Approve / Deny. */
+export function ApprovalCard({ a, onChange }: { a: Approval; onChange: (s: Approval["state"]) => void }) {
+  const answer = async (ok: boolean) => {
+    onChange("sending");
+    try { await api.answerApproval(a.id, ok); onChange(ok ? "approved" : "denied"); } catch { onChange("asking"); }
+  };
+  return (
+    <div className={`tx-approve ${a.state}`} role="group" aria-label="Approve this action">
+      <div className="tx-approve-what"><b>{agentName()} wants to:</b> {a.detail}</div>
+      {a.state === "asking" || a.state === "sending" ? (
+        <div className="tx-approve-btns">
+          <button className="ghost" disabled={a.state === "sending"} onClick={() => void answer(false)}>Don't</button>
+          <button className="primary" disabled={a.state === "sending"} onClick={() => void answer(true)}>Approve</button>
+        </div>
+      ) : <small>{a.state === "approved" ? "Approved" : "Not done"}</small>}
+    </div>
   );
 }

@@ -22,8 +22,6 @@ const TEXT_TABLES: Spec[] = [
   { table: "study_sets", key: "id", cols: ["data"] },
   { table: "study_sessions", key: "id", cols: ["data", "played"] },
   { table: "study_misses", key: "id", cols: ["data"] },
-  { table: "paper_cards", key: "id", cols: ["name", "template"] },
-  { table: "paper_pages", key: "note_id", cols: ["title", "icon", "html"] },
 ];
 
 /** SQL: rows with any column that is plaintext or sealed with a different key. Only the key id is compared, in SQL. */

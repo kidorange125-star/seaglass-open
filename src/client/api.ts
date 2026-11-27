@@ -10,12 +10,6 @@ export interface InboxItem { id: string; source: "checkin" | "routine"; kind: "n
 export interface SavedPrompt { id: string; name: string; text: string }
 export interface Routine { id: string; name: string; prompt: string; days: number; time: string; notify: boolean; enabled: boolean; last_run: string | null }
 import { enqueue, isNetworkError, OfflineQueued } from "./offline";
-/** Paper Lock (worker/paper.ts). */
-export interface PaperCard { id: string; name: string; pages: number; created_at: number; blocked_until: number; retired?: boolean }
-/** One scan of a card: the card found, straightened and read (paper/CardCamera.tsx). */
-export interface PaperScan { bits: string }
-export interface PaperRequest { id: string; device: string; card: string; card_id: string; created_at: number; expires_at: number }
-export interface PaperGrantInfo { id: string; device: string; card: string; since: number; expires_at: number }
 export interface Memory { id: string; text: string; source: string; created_at: number; updated_at: number }
 /** A chat with Jeff as stored on the server (messages are the panel's own format). */
 export interface SyncedChat { id: string; title: string; updated: number; msgs: unknown[] }
@@ -70,6 +64,8 @@ export interface GameLink { mode: "quiz" | "blanks" | "match"; ids: string[]; ti
 export type AgentEvent =
   | { type: "text"; delta: string }
   | { type: "tool_start"; id: string; name: string; label: string }
+  | { type: "approval"; id: string; tool_id: string; detail: string }
+  | { type: "approval_done"; id: string; tool_id: string; ok: boolean }
   | { type: "working"; name: string }
   | { type: "tool_result"; id: string; name: string; ok: boolean; label: string; note_ids: string[]; game?: GameLink }
   | { type: "done"; run_id: string; changes: number; usage: { input: number; output: number; cache_read: number; cache_write: number; cost_usd: number }; stop: string }
@@ -82,6 +78,8 @@ export interface SetupData {
   mcp: { url: string; claude_code: string };
   wif: { issuer: string; discovery: string; jwks: string; subject: string; audience: string; key_set: boolean; missing: string[] };
 }
+export type PermLevel = "allow" | "ask" | "never";
+export type AgentPermissions = Record<"add" | "edit" | "delete" | "memory" | "routines" | "web", PermLevel>;
 export interface Account { id: string; username: string; display_name: string; role: string }
 export interface Household { mode: "individual" | "household"; name: string }
 export interface SessionInfo { authed: boolean; setup?: boolean; no_tables?: boolean; code_required?: boolean; code_set?: boolean; user?: Account | null; household?: Household }
@@ -257,24 +255,9 @@ export const api = {
   setStudyPage: (id: string, b: { subject?: string | null; exam?: string | null; done?: boolean; excluded?: boolean; pinned?: boolean }) => call<{ page_id: string }>(`/api/study-pages/${id}`, { method: "PUT", body: j(b) }),
   studyDue: (today: string) => call<{ id: string; title: string; icon: string | null; due: number }[]>(`/api/study-due?today=${today}`),
   get: (id: string) => call<Note>(`/api/notes/${id}`),
-  // Paper Lock: a card is drawn and scanned on a phone; a page's words come out only with an open lock's secret
-  paperCards: () => call<PaperCard[]>("/api/paper/cards"),
-  paperMakeCard: (name: string, scans: string[]) => call<{ id: string; name: string }>("/api/paper/cards", { method: "POST", body: j({ name, scans }) }),
-  paperDeleteCard: (id: string) => call<{ ok: boolean }>(`/api/paper/cards/${id}`, { method: "DELETE" }),
-  paperLock: (id: string, cardId: string, scan?: PaperScan) => call<Note>(`/api/paper/pages/${id}/lock`, { method: "POST", body: j({ card_id: cardId, scan }) }),
-  paperInfo: (id: string) => call<{ id: string; name: string; missing: boolean; retired: boolean }>(`/api/paper/pages/${id}/info`),
-  paperAsk: (id: string) => call<{ id: string; secret: string; expires_at: number }>(`/api/paper/pages/${id}/request`, { method: "POST", body: j({}) }),
-  paperScan: (id: string, scan: PaperScan) => call<{ secret: string; grant_id: string }>(`/api/paper/pages/${id}/unlock`, { method: "POST", body: j({ scan }) }),
-  paperRead: (id: string, secret: string) => call<Note>(`/api/paper/pages/${id}`, { headers: { "X-Paper-Grant": secret } }),
-  paperSave: (id: string, secret: string, patch: Record<string, unknown>) => call<Note>(`/api/paper/pages/${id}`, { method: "PUT", headers: { "X-Paper-Grant": secret }, body: j(patch) }),
-  paperPing: (id: string, secret: string) => call<{ ok: boolean }>(`/api/paper/pages/${id}/ping`, { method: "POST", headers: { "X-Paper-Grant": secret }, body: j({}) }),
-  paperRemoveLock: (id: string, secret: string) => call<Note>(`/api/paper/pages/${id}/remove-lock`, { method: "POST", headers: { "X-Paper-Grant": secret }, body: j({}) }),
-  paperRelock: (b: { secret?: string; grant_id?: string; request_id?: string }) => call<{ ok: boolean }>("/api/paper/relock", { method: "POST", body: j(b) }),
-  paperRequests: () => call<{ requests: PaperRequest[] }>("/api/paper/requests"),
-  paperRequestStatus: (id: string) => call<{ status: "pending" | "approved" | "denied" | "expired" | "relocked" }>(`/api/paper/requests/${id}`),
-  paperApprove: (id: string, scan: PaperScan) => call<{ ok: boolean; device: string; grant_id: string; card: string }>(`/api/paper/requests/${id}/approve`, { method: "POST", body: j({ scan }) }),
-  paperDeny: (id: string) => call<{ ok: boolean }>(`/api/paper/requests/${id}/deny`, { method: "POST", body: j({}) }),
-  paperGrants: () => call<{ grants: PaperGrantInfo[] }>("/api/paper/grants"),
+  agentPermissions: () => call<{ permissions: AgentPermissions; presets: Record<string, AgentPermissions> }>("/api/agent/permissions"),
+  setAgentPermissions: (p: Partial<AgentPermissions>) => call<{ permissions: AgentPermissions }>("/api/agent/permissions", { method: "PUT", body: j(p) }),
+  answerApproval: (id: string, ok: boolean) => call<{ ok: boolean }>(`/api/agent/approvals/${id}`, { method: "POST", body: j({ ok }) }),
   ensureCalendar: () => call<{ id: string; created: boolean; trashed: boolean }>("/api/calendar/ensure", { method: "POST" }),
   ensureTasks: () => { const d = new Date(); const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; return call<{ id: string; created: boolean; trashed: boolean }>("/api/tasks/ensure", { method: "POST", body: j({ today }) }); },
   children: (id: string) => call<Note[]>(`/api/notes/${id}/children`),

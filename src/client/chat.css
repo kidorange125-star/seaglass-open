@@ -101,3 +101,12 @@
 /* The model button sits at the right of the message field, so its menu opens leftwards from there and never runs
    past the chat window's edge. */
 @media (min-width: 860px) { .agent .ag-model-pop { left: auto; right: 0; max-width: calc(100vw - 24px); } }
+
+/* The assistant asking before it acts (AgentPanel ApprovalCard). */
+.tx-approve { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: 16px; border: 1.5px solid color-mix(in srgb, #3f8e86 45%, var(--border)); background: color-mix(in srgb, #8fcaae 12%, var(--surface)); max-width: 100%; font-size: 14.5px; line-height: 1.45; }
+.tx-approve-what b { font-weight: 650; }
+.tx-approve-btns { display: flex; gap: 8px; justify-content: flex-end; }
+.tx-approve-btns button { min-width: 84px; }
+.tx-approve small { color: var(--text-3); font-size: 12.5px; }
+.tx-approve.approved, .tx-approve.denied { border-style: dashed; background: transparent; padding: 8px 12px; }
+.tx-approve.denied .tx-approve-what { color: var(--text-3); }

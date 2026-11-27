@@ -17,13 +17,13 @@ import * as Sem from "./semantic";
 import { isState } from "../client/study/srs";
 import * as Study from "./study";
 import * as Voice from "./voice";
-import * as Paper from "./paper";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import * as N from "./notes";
 import { isHidden } from "./hidden";
 import type { Env } from "./env";
 import { COOKIE, currentUser, devOpen } from "./auth";
 import { registerAccounts, registerAccountRoutes, userCount } from "./setup";
+import * as Approvals from "./approvals";
 import { MODEL, MODELS, runAgent, ToolError, type AgentEvent } from "./agent";
 import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
 import * as Vault from "./vault";
@@ -56,8 +56,6 @@ registerAccountRoutes(app);
 app.onError((e, c) => {
   if (e instanceof N.ConflictError) return c.json({ error: "conflict", current: e.current }, 409);
   if (e instanceof N.LockedError) return c.json({ error: "page is locked" }, 423);
-  if (e instanceof N.PaperLockedError) return c.json({ error: e.message, paper: true }, 423);
-  if (e instanceof Paper.PaperError) return c.json({ error: e.message, ...e.extra }, e.status);
   if (e instanceof N.HiddenError) return c.json({ error: HIDDEN_MSG }, 403);
   if (e instanceof N.BadRequest) return c.json({ error: e.message }, 400);
   console.error(e);
@@ -464,34 +462,6 @@ app.post("/api/notes/:id/share", async (c) => {
   return r ? c.json(r) : notFound(c);
 });
 
-// ---------------------------------------------------------------- Paper Lock (paper.ts)
-// A card is drawn and scanned on a phone. A page's words come out only for a device holding an open lock (X-Paper-Grant).
-const grantOf = (c: { req: { header: (n: string) => string | undefined } }) => c.req.header("X-Paper-Grant");
-const ua = (c: { req: { header: (n: string) => string | undefined } }) => c.req.header("User-Agent");
-app.get("/api/paper/cards", async (c) => c.json(await Paper.listCards(c.env.DB)));
-app.post("/api/paper/cards", async (c) => { Paper.phoneOnly(ua(c)); const b = await body(c); Paper.notOldApp(b); return c.json(await Paper.createCard(c.env.DB, b), 201); });
-app.delete("/api/paper/cards/:id", async (c) => c.json({ ok: await Paper.deleteCard(c.env.DB, c.req.param("id")) }));
-app.post("/api/paper/pages/:id/lock", async (c) => {
-  Paper.phoneOnly(ua(c));
-  const b = await body<{ card_id?: string; scan?: unknown }>(c);
-  Paper.notOldApp(b);
-  const n = await Paper.lockPage(c.env.DB, c.req.param("id"), String(b.card_id ?? ""), b.scan);
-  return c.json(n);
-});
-app.get("/api/paper/pages/:id/info", async (c) => c.json(await Paper.cardOf(c.env.DB, c.req.param("id"))));
-app.post("/api/paper/pages/:id/request", async (c) => c.json(await Paper.requestUnlock(c.env, c.req.param("id"), ua(c)), 201));
-app.post("/api/paper/pages/:id/unlock", async (c) => { Paper.phoneOnly(ua(c)); const b = await body<{ scan?: unknown }>(c); Paper.notOldApp(b); return c.json(await Paper.unlockDirect(c.env.DB, c.req.param("id"), b.scan, ua(c))); });
-app.get("/api/paper/pages/:id", async (c) => c.json(await Paper.readPage(c.env.DB, c.req.param("id"), grantOf(c))));
-app.put("/api/paper/pages/:id", async (c) => c.json(await Paper.savePage(c.env.DB, c.req.param("id"), grantOf(c), await body(c))));
-app.post("/api/paper/pages/:id/ping", async (c) => c.json(await Paper.ping(c.env.DB, c.req.param("id"), grantOf(c))));
-app.post("/api/paper/pages/:id/remove-lock", async (c) => c.json(await Paper.removeLock(c.env.DB, c.req.param("id"), grantOf(c))));
-app.post("/api/paper/relock", async (c) => c.json(await Paper.relock(c.env.DB, await body(c))));
-app.get("/api/paper/requests", async (c) => c.json({ requests: await Paper.pendingRequests(c.env.DB) }));
-app.get("/api/paper/requests/:id", async (c) => c.json(await Paper.requestStatus(c.env.DB, c.req.param("id"))));
-app.post("/api/paper/requests/:id/approve", async (c) => { Paper.phoneOnly(ua(c)); const b = await body<{ scan?: unknown }>(c); Paper.notOldApp(b); return c.json(await Paper.approve(c.env.DB, c.req.param("id"), b.scan)); });
-app.post("/api/paper/requests/:id/deny", async (c) => c.json(await Paper.deny(c.env.DB, c.req.param("id"))));
-app.get("/api/paper/grants", async (c) => c.json({ grants: await Paper.activeGrants(c.env.DB) }));
-
 app.get("/api/notes/:id/comments", async (c) => c.json(await N.listComments(c.env.DB, c.req.param("id"))));
 app.post("/api/notes/:id/comments", async (c) => { const b = await body<{ body?: string; anchor?: unknown }>(c); return c.json(await N.addComment(c.env.DB, c.req.param("id"), String(b.body ?? ""), { anchor: b.anchor }), 201); });
 app.patch("/api/comments/:cid", async (c) => { const b = await body<{ resolved?: boolean; outcome?: string }>(c); await N.resolveComment(c.env.DB, c.req.param("cid"), !!b.resolved, b.outcome); return c.body(null, 204); });
@@ -571,6 +541,13 @@ app.get("/api/setup", async (c) => {
 });
 
 // Which assistant the app shows: Waffle (default) or Waffle. Only the name and picture change; the agent uses the name too.
+// What the assistant may do on its own, and the answers to its questions (approvals.ts).
+app.get("/api/agent/permissions", async (c) => c.json({ permissions: await Approvals.permissions(c.env.DB), presets: Approvals.PRESETS }));
+app.put("/api/agent/permissions", async (c) => c.json({ permissions: await Approvals.savePermissions(c.env.DB, await body(c)) }));
+app.post("/api/agent/approvals/:id", async (c) => {
+  const ok = (await body<{ ok?: unknown }>(c)).ok === true;
+  return (await Approvals.decide(c.env.DB, c.req.param("id"), ok)) ? c.json({ ok: true }) : c.json({ error: "That question was already answered or has expired." }, 410);
+});
 app.get("/api/persona", (c) => c.json({ persona: "waffle" }));
 app.put("/api/persona", async (c) => {
   const p = (await body<{ persona?: unknown }>(c)).persona;

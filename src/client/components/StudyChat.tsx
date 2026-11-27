@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUp, Square, TriangleAlert } from "lucide-react";
 import { api, ApiError, type AgentEvent } from "../api";
 import { useStore, type StudyChatTarget } from "../store";
+import { ApprovalCard, type Approval } from "./AgentPanel";
 import { JeffAvatar } from "../icons";
 import { IClose } from "../ui-icons";
 import { agentName } from "../persona";
@@ -12,7 +13,7 @@ import { jeffModel } from "./AiTools";
 import { renderMd } from "./AgentPanel";
 
 type Game = NonNullable<Extract<AgentEvent, { type: "tool_result" }>["game"]>;
-interface Tool { id: string; label: string; status: "running" | "ok" | "error"; game?: Game }
+interface Tool { id: string; label: string; status: "running" | "ok" | "error"; game?: Game; approval?: Approval }
 interface Bubble { key: string; role: "me" | "them" | "note"; text: string; tools: Tool[]; streaming?: boolean; error?: string; runId?: string; changes?: number; undone?: boolean }
 
 const QUICK = ["Quiz me", "Explain that more simply", "I don't get it", "What should I focus on?", "Make me a study plan"];
@@ -49,6 +50,8 @@ export function StudyChat({ target }: { target: StudyChatTarget }) {
       else if (e.type === "working") setWorking(true);
       else if (e.type === "tool_start") { setWorking(true); patch(aKey, (m) => ({ ...m, tools: [...m.tools, { id: e.id, label: e.label, status: "running" }] })); }
       else if (e.type === "tool_result") { patch(aKey, (m) => ({ ...m, tools: m.tools.map((t) => (t.id === e.id ? { ...t, status: e.ok ? "ok" : "error", label: e.label, game: e.game } : t)) })); if (e.ok && e.note_ids.length) changed(); }
+      else if (e.type === "approval") { setWorking(false); patch(aKey, (m) => ({ ...m, tools: m.tools.map((t) => (t.id === e.tool_id ? { ...t, approval: { id: e.id, detail: e.detail, state: "asking" } } : t)) })); }
+      else if (e.type === "approval_done") { setWorking(true); patch(aKey, (m) => ({ ...m, tools: m.tools.map((t) => (t.id === e.tool_id && t.approval ? { ...t, approval: { ...t.approval, state: e.ok ? "approved" : "denied" } } : t)) })); }
       else if (e.type === "done") patch(aKey, (m) => ({ ...m, runId: e.run_id, changes: e.changes }));
       else if (e.type === "error") patch(aKey, (m) => ({ ...m, error: e.message }));
     };
@@ -113,6 +116,7 @@ export function StudyChat({ target }: { target: StudyChatTarget }) {
                 : m.role === "me" ? <div className="tx-line"><div className="tx-bubble me">{m.text}</div></div>
                 : (
                   <div className="tx-line"><div className="tx-col">
+                    {m.tools.filter((t) => t.approval).map((t) => <ApprovalCard key={`ap-${t.id}`} a={t.approval!} onChange={(state) => patch(m.key, (x) => ({ ...x, tools: x.tools.map((y) => (y.id === t.id && y.approval ? { ...y, approval: { ...y.approval, state } } : y)) }))} />)}
                     {m.tools.length > 0 && <div className="tx-tools">{m.tools.map((t) => <span key={t.id} className={`tx-tool ${t.status}`}><span>{t.status === "running" ? `${t.label}…` : t.label}</span></span>)}</div>}
                     {m.text && <div className="tx-bubble them ag-md" dangerouslySetInnerHTML={renderMd(m.text)} />}
                     {m.streaming && !m.text && <div className="tx-bubble them tx-typing" aria-label="Typing"><i /><i /><i /></div>}

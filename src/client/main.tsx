@@ -16,7 +16,6 @@ import "./study.css";
 import "./calendar.css";
 import "./welcome.css";
 import "./live.css";
-import "./paper/paper.css";
 import { initGlass } from "./glass";
 
 registerServiceWorker();

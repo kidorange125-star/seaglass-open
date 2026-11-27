@@ -3,6 +3,7 @@ import * as M from "./memory";
 import { HiddenError, hiddenIds, namesHidden, scrub, type HiddenSet } from "./hidden";
 import { systemFor } from "./persona";
 import { ownerName } from "./setup";
+import * as Approvals from "./approvals";
 import { agentLabel, modelName } from "./identity";
 import * as N from "./notes";
 import * as Sy from "./sync";
@@ -49,6 +50,9 @@ export type AgentEvent =
   | { type: "working"; name: string }
   // game: the assistant wrote a study game, so the chat can show a button to play it
   | { type: "tool_result"; id: string; name: string; ok: boolean; label: string; note_ids: string[]; game?: GameLink }
+  // the assistant wants to do something the user asked to approve first (approvals.ts): the chat shows Approve / Deny
+  | { type: "approval"; id: string; tool_id: string; detail: string }
+  | { type: "approval_done"; id: string; tool_id: string; ok: boolean }
   | { type: "done"; run_id: string; changes: number; usage: Usage; stop: string }
   | { type: "error"; message: string };
 
@@ -799,7 +803,7 @@ export async function runAgent(env: Env, p: AgentParams, send: (e: AgentEvent) =
   const PRICE = MODELS[model].price, SPEED_COST = p.fast ? 2 : 1;
   // The user can pick Waffle instead of Waffle in Settings: same assistant and tools, Waffle's name and its own few lines (persona.ts).
   const persona = (await env.DB.prepare("SELECT value FROM prefs WHERE key = 'persona'").first<{ value: string }>())?.value;
-  const call = mode === "mock" ? mockModel() : realModel(claudeClient(env), model, p.web !== false && !p.quick, systemFor(SYSTEM, persona), { voice: p.voice, fast: p.fast, quick: p.quick });
+  const call = mode === "mock" ? mockModel() : realModel(claudeClient(env), model, p.web !== false && !p.quick && (await Approvals.permissions(env.DB)).web !== "never", systemFor(SYSTEM, persona), { voice: p.voice, fast: p.fast, quick: p.quick });
   // Which agent this is, on every change it makes: "Waffle (Sonnet 5.5)", "Waffle (Haiku 5.5, live voice)"… (identity.ts)
   const agent = agentLabel(persona, [`${modelName(model)}${p.fast ? " Fast" : ""}`, p.via, p.voice && "live voice", p.handoff && "for live voice", p.quick && "Ctrl+K", !!p.study?.ids.length && "Study chat"]);
   const ctx: ToolCtx = { source: "agent", runId: p.run_id, agent, chatId: p.chat_id ?? null, threadBefore: p.thread_before ?? null, tz: p.tz };
@@ -811,6 +815,8 @@ export async function runAgent(env: Env, p: AgentParams, send: (e: AgentEvent) =
   // Who you're talking with (their account's name), so prompts written about "The user" can be personal.
   const who = await ownerName(env.DB).catch(() => "");
   if (who) context += ` You're talking with ${who.replace(/[<>\s]+/g, " ").trim()}.`;
+  const perms = await Approvals.permissions(env.DB);
+  context += Approvals.permissionNote(perms);
   if (p.page_id && UUID.test(p.page_id)) {
     const cur = await N.getNote(env.DB, p.page_id);
     if (cur && (await hiddenIds(env.DB)).has(cur.id)) context += " The user is viewing a page that's hidden from you (Hide from AI): you can't see or change it. If the user asks about it, tell them it's hidden from you.";
@@ -890,6 +896,17 @@ export async function runAgent(env: Env, p: AgentParams, send: (e: AgentEvent) =
           continue;
         }
         if (p.quick && QUICK_OFF.has(u.name)) throw new ToolError("Not available in a quick action. Do the job with the other tools, or say in your line that it needs the chat.");
+        // The user's permissions (approvals.ts): Never refuses; Ask waits for Approve or Deny in the chat.
+        const kind = Approvals.kindOf(u.name), level = kind ? perms[kind] : "allow";
+        if (level === "never") throw new ToolError("The user has turned this kind of action off in Settings > Assistant permissions. Don't try another way; tell them what you would have done.");
+        if (level === "ask") {
+          if (p.quick || p.voice || p.handoff || p.via) throw new ToolError("The user wants to approve this kind of action first, and this can't ask them (a quick action, live voice or a routine). Tell them to ask you in the chat instead.");
+          const qid = await Approvals.ask(env.DB, p.run_id, u.name);
+          send({ type: "approval", id: qid, tool_id: u.id, detail: await Approvals.describe(env.DB, u.name, u.input) });
+          const ok = await Approvals.waitFor(env.DB, qid, isAborted);
+          send({ type: "approval_done", id: qid, tool_id: u.id, ok });
+          if (!ok) throw new ToolError("The user didn't approve this, so it wasn't done. Don't try it another way; ask what they'd like instead.");
+        }
         const out = await runTool(env.DB, u.name, u.input, ctx, env);
         if (!/^(search_notes|list_pages|read_note|read_file|suggest_edit|list_database_rows|study_overview|study_results|study_session|flashcard_progress|grades_overview|make_study_game)$/.test(u.name)) changes++;
         results.push({ type: "tool_result", tool_use_id: u.id, content: out.text });

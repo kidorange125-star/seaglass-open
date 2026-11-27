@@ -17,8 +17,8 @@ This is **Seaglass Open**, the open-source edition, released under the [Apache L
   missed questions that come back, study plans for a test date, grades and what the next test needs.
 - **Waffle**, the assistant (needs a Claude API key): chat, live voice, quick actions from search, writing help, notes from a
   photo or a recorded class, and routines that run on a schedule if you turn them on.
-- **Privacy tools**: Hide from AI on any page; Paper Lock, which locks a page behind a card you draw by hand; page history and
-  undo for every change, including the assistant's.
+- **Privacy tools**: Hide from AI on any page, locked pages, and page history and undo for every change, including the
+  assistant's.
 - **Connect Claude** to your notes over MCP (Claude Desktop, claude.ai, Claude Code), with an account sign-in.
 - **Works on your phone**: installs as an app, works offline, sends task reminders.
 - **Accounts**: a username and password; setup asks whether this Seaglass is just for you or for a household.

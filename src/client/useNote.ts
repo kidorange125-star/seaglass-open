@@ -3,17 +3,8 @@ import { OfflineQueued } from "./offline";
 import { api, ApiError, Conflict } from "./api";
 import { useStore } from "./store";
 import type { Note } from "./types";
-import { dropGrant, grantOf } from "./paper/grants";
 
-/** A page as this device may see it: a paper-locked one comes with its real title and words only if this device holds an open lock. */
-async function fetchNote(id: string): Promise<Note> {
-  const n = await api.get(id);
-  if (!n.paper_lock) return n;
-  const g = grantOf(id);
-  if (!g) return n;
-  try { return await api.paperRead(id, g); }
-  catch (e) { if (e instanceof ApiError && e.status === 423) dropGrant(id); return n; }
-}
+const fetchNote = (id: string): Promise<Note> => api.get(id);
 
 export type SaveState = "saved" | "saving" | "conflict" | "error" | "offline";
 
@@ -50,32 +41,20 @@ export function useNote(id: string) {
       try {
         let saved: Note | null = null;
         const rest: Record<string, unknown> = { ...patch };
-        if (n.paper_unlocked) {
-          // a paper-locked page: its title, icon and words are saved through the lock (they aren't in the page's own row)
-          const part: Record<string, unknown> = {};
-          for (const k of ["title", "html", "icon"]) if (k in rest) { part[k] = rest[k]; delete rest[k]; }
-          if (Object.keys(part).length) {
-            const g = grantOf(id);
-            if (!g) throw new ApiError(423, "locked", { paper: true });
-            saved = await api.paperSave(id, g, { ...part, revision: n.paper_rev });
-            ref.current = { ...(ref.current ?? n), paper_rev: saved.paper_rev };
-            setNote((cur) => (cur ? { ...cur, paper_rev: saved!.paper_rev, updated_at: saved!.updated_at } : cur));
-          }
-        }
         if (!saved || Object.keys(rest).length) saved = await api.patch(id, { ...rest, revision: n.revision });
         setNote((cur) => (cur ? { ...cur, revision: saved!.revision, updated_at: saved!.updated_at } : cur));
         ref.current = { ...(ref.current ?? n), revision: saved.revision };
-        serverHtml.current = n.paper_unlocked && "html" in patch ? String(patch.html) : saved.html;
+        serverHtml.current = saved.html;
         setStatus("saved");
         const t: Record<string, unknown> = {};
-        for (const k of ["title", "icon", "favorite", "locked", "is_template", "parent_id", "position"]) if (k in patch && !(n.paper_unlocked && (k === "title" || k === "icon"))) t[k] = patch[k];
+        for (const k of ["title", "icon", "favorite", "locked", "is_template", "parent_id", "position"]) if (k in patch) t[k] = patch[k];
         if (Object.keys(t).length) storeRef.current.patchTreeLocal(id, { ...t, updated_at: saved.updated_at });
         if ("parent_id" in patch) void storeRef.current.refreshTree();
       } catch (e) {
         // Offline: the edit is safe in the device queue (offline.ts); it is sent when the connection returns.
         if (e instanceof OfflineQueued) { setStatus("offline"); return; }
         if (e instanceof Conflict) { pending.current = { ...patch, ...pending.current }; setConflict(e.current); setStatus("conflict"); }
-        else { pending.current = { ...patch, ...pending.current }; setStatus("error"); if (e instanceof ApiError && e.status === 423) { setStatus("saved"); pending.current = {}; if (e.data.paper) dropGrant(id); storeRef.current.toast(e.data.paper ? "The paper lock closed, so that wasn't saved" : "This page is locked"); void load(true); } }
+        else { pending.current = { ...patch, ...pending.current }; setStatus("error"); if (e instanceof ApiError && e.status === 423) { setStatus("saved"); pending.current = {}; storeRef.current.toast("This page is locked"); void load(true); } }
       }
     });
     return chain.current;
@@ -122,10 +101,9 @@ export function useNote(id: string) {
       const { id: nid, note: fresh } = (e as CustomEvent<{ id: string; note: Note }>).detail;
       const cur = ref.current;
       if (nid !== id || !cur || fresh.revision <= cur.revision) return;
-      // an open paper-locked page's words and title are not in the row that was patched (paper/grants.ts), so they're never compared or replaced
-      if (!cur.paper_unlocked && fresh.html !== cur.html && !("html" in pending.current)) return;
+      if (fresh.html !== cur.html && !("html" in pending.current)) return;
       const merged: Record<string, unknown> = { ...cur };
-      const own = cur.paper_unlocked ? ["title", "icon", "paper_unlocked", "paper_rev", "ai_hidden_inherited"] : [];
+      const own: string[] = [];
       for (const [k, v] of Object.entries(fresh)) if (k !== "html" && k !== "text" && !own.includes(k) && !(k in pending.current)) merged[k] = v;
       ref.current = merged as unknown as Note;
       setNote(ref.current);
@@ -155,7 +133,7 @@ export function useNote(id: string) {
 
   const reloadLatest = useCallback(() => { pending.current = {}; setConflict(null); setStatus("saved"); void load(true); }, [load]);
   const keepMine = useCallback(() => {
-    if (conflict && ref.current) { ref.current = { ...ref.current, revision: conflict.revision, paper_rev: conflict.paper_rev ?? ref.current.paper_rev }; setNote(ref.current); }
+    if (conflict && ref.current) { ref.current = { ...ref.current, revision: conflict.revision }; setNote(ref.current); }
     setConflict(null); void flush();
   }, [conflict, flush]);
 

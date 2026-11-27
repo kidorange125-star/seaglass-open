@@ -3,8 +3,6 @@ export interface TreeNode {
   favorite: number; position: number; is_template: number; locked: number; updated_at: number; created_at: number;
   /** "Hide from AI": Jeff, Claude and AI features can't see this page or anything under it. */
   ai_hidden?: number;
-  /** Paper Lock: the id of the card this page is locked with (the words are only on the server, behind a scan of it). */
-  paper_lock?: string | null;
   /** Set on built-in databases: "tasks" is the to-do list. */
   system?: string | null;
 }
@@ -13,8 +11,6 @@ export interface Note extends TreeNode {
   props: string; db_schema: string | null; share_slug: string | null; revision: number; deleted_at: number | null;
   /** Hidden from AI because a page above it is. */
   ai_hidden_inherited?: boolean;
-  /** A paper-locked page this device has opened: its real title and words are in the note, `paper_rev` is their revision. */
-  paper_unlocked?: boolean; paper_rev?: number;
 }
 export interface SearchHit extends TreeNode { snippet?: string }
 

@@ -29,9 +29,6 @@ export interface Note {
   props: string;
   db_schema: string | null;
   share_slug: string | null;
-  /** Paper Lock: the id of the card that guards this page. Its real title, icon and words are in paper_pages (sealed) and
-   *  this row is an empty placeholder, hidden from AI, that can't be shared (paper.ts). */
-  paper_lock: string | null;
   revision: number;
   created_at: number;
   updated_at: number;
@@ -52,8 +49,6 @@ export class ConflictError extends Error {
   constructor(public current: Note) { super("revision conflict"); }
 }
 export class LockedError extends Error { constructor() { super("page is locked"); } }
-/** A write or read of a page's words without the paper card's say-so. The words aren't in this row at all. */
-export class PaperLockedError extends Error { constructor() { super("This page is locked with a paper card: scan the card on your phone to open it."); } }
 export class BadRequest extends Error {}
 
 const now = () => Date.now();
@@ -105,7 +100,7 @@ async function sealedNote(id: string, v: { title: string; html: string; text: st
 
 // Columns the sidebar needs. `system` marks built-in databases (today: the "tasks" to-do list) so the app can
 // find them without loading schemas. Use lightCols("n") inside joins.
-const LIGHT_COLS = "id,parent_id,kind,title,icon,favorite,position,is_template,locked,ai_hidden,paper_lock,updated_at,created_at,meta,system";
+const LIGHT_COLS = "id,parent_id,kind,title,icon,favorite,position,is_template,locked,ai_hidden,updated_at,created_at,meta,system";
 const lightCols = (alias = "") => (alias ? LIGHT_COLS.split(",").map((c) => `${alias}.${c}`).join(",") : LIGHT_COLS);
 const LIGHT = lightCols();
 
@@ -290,7 +285,6 @@ export async function patchNote(db: D1Database, id: string, patch: Patch, ctx: C
   await guardAi(db, ctx, id, typeof patch.parent_id === "string" ? patch.parent_id : null);
   if (patch.revision !== undefined && before.revision !== patch.revision) throw new ConflictError(before);
 
-  if (before.paper_lock && ("title" in patch || "html" in patch)) throw new PaperLockedError(); // its words are in paper_pages
   const touchesContent = ["title", "html", "parent_id", "kind", "props", "db_schema", "deleted_at"].some((k) => k in patch);
   if (before.locked && touchesContent && patch.locked !== 0 && patch.locked !== false) throw new LockedError();
 
@@ -388,7 +382,6 @@ export async function purgeNote(db: D1Database, id: string) {
     db.prepare(`DELETE FROM links WHERE from_id IN (${ph}) OR to_id IN (${ph})`).bind(...ids, ...ids),
     db.prepare(`DELETE FROM comments WHERE note_id IN (${ph})`).bind(...ids),
     db.prepare(`DELETE FROM actions WHERE note_id IN (${ph})`).bind(...ids),
-    db.prepare(`DELETE FROM paper_pages WHERE note_id IN (${ph})`).bind(...ids),
     db.prepare(`DELETE FROM paper_requests WHERE note_id IN (${ph})`).bind(...ids),
     db.prepare(`DELETE FROM paper_grants WHERE note_id IN (${ph})`).bind(...ids),
     ...ids.flatMap((x) => changeStmts(db, x, "deleted", "user", now())),
@@ -406,7 +399,6 @@ export async function duplicateNote(db: D1Database, id: string, ctx: Ctx) {
   const root = await getNote(db, id);
   if (!root) return null;
   await guardAi(db, ctx, id);
-  if (root.paper_lock) throw new BadRequest("A page locked with a paper card can't be duplicated. Unlock it, remove the lock, then copy it.");
   const ids = await subtreeIds(db, id);
   const rows = (await openNotes((await db.prepare(`SELECT * FROM notes WHERE id IN (${ids.map(() => "?").join(",")}) AND deleted_at IS NULL`).bind(...ids).all<Note>()).results as unknown as Record<string, unknown>[])) as unknown as Note[];
   const map = new Map(rows.map((r) => [r.id, crypto.randomUUID()]));
@@ -442,60 +434,11 @@ export async function hiddenForAi(db: D1Database): Promise<HiddenSet> {
 /** Turns "Hide from AI" on or off. Only the app's own routes call this: Waffle and MCP can never change it.
  *  Bumps updated_at (so other devices pick it up) but not revision (so open editors don't see a conflict). */
 export async function setAiHidden(db: D1Database, id: string, hidden: boolean) {
-  if (!hidden && (await db.prepare("SELECT 1 AS x FROM notes WHERE id = ? AND paper_lock IS NOT NULL").bind(id).first())) throw new BadRequest("A page locked with a paper card stays hidden from AI. Remove the paper lock first.");
   const r = await db.prepare("UPDATE notes SET ai_hidden = ?, updated_at = ? WHERE id = ?").bind(flag(hidden), now(), id).run();
   if (!r.meta.changes) return null;
   // Drop its search vectors (and its sub-pages'), so semantic search can't surface it.
   if (hidden) await db.prepare(`DELETE FROM embeddings WHERE note_id IN (WITH RECURSIVE d(id) AS (SELECT ?1 UNION ALL SELECT n.id FROM notes n JOIN d ON n.parent_id = d.id) SELECT id FROM d)`).bind(id).run();
   return getNote(db, id, true);
-}
-
-// ---------------------------------------------------------------- Paper Lock (worker/paper.ts decides who may call these)
-
-/** Moves a page's title, icon and words into paper_pages (sealed) and leaves an empty placeholder in notes, hidden from AI,
- *  unshared, with no history, search vectors, comments or outgoing links left behind to read it from. */
-export async function paperLock(db: D1Database, id: string, cardId: string) {
-  const n = await getNote(db, id);
-  if (!n) return null;
-  if (n.paper_lock) throw new BadRequest("This page is already locked with a paper card.");
-  if (n.kind !== "page") throw new BadRequest("Only pages can be locked with a paper card, not databases.");
-  const kids = await db.prepare("SELECT COUNT(*) AS c FROM notes WHERE parent_id = ? AND deleted_at IS NULL").bind(id).first<{ c: number }>();
-  if (kids?.c) throw new BadRequest("Move this page's sub-pages out of it first: a locked page can't hold other pages.");
-  const t = now();
-  const [pt, pi, ph, nt, nh, nx, ni] = await Promise.all([
-    Vault.seal("paper_pages", id, "title", n.title), Vault.seal("paper_pages", id, "icon", n.icon), Vault.seal("paper_pages", id, "html", n.html),
-    sealCol(id, "title", "Paper-locked page"), sealCol(id, "html", ""), sealCol(id, "text", ""), sealCol(id, "icon", "🔒"),
-  ]);
-  await db.batch([
-    db.prepare("INSERT INTO paper_pages (note_id, card_id, title, icon, html, revision, updated_at) VALUES (?,?,?,?,?,1,?)").bind(id, cardId, pt, pi, ph, t),
-    db.prepare("UPDATE notes SET title=?, html=?, text=?, icon=?, ai_hidden=1, share_slug=NULL, paper_lock=?, revision=revision+1, updated_at=? WHERE id=?").bind(nt, nh, nx, ni, cardId, t, id),
-    db.prepare("DELETE FROM actions WHERE note_id = ?").bind(id),
-    db.prepare("DELETE FROM embeddings WHERE note_id = ?").bind(id),
-    db.prepare("DELETE FROM comments WHERE note_id = ?").bind(id),
-    db.prepare("DELETE FROM links WHERE from_id = ?").bind(id),
-    ...changeStmts(db, id, "edited", "user", t),
-  ]);
-  return (await getNote(db, id))!;
-}
-
-/** Takes the paper lock off: the words go back into the page. It stays hidden from AI (The user can turn that off themselves). */
-export async function paperUnlockForever(db: D1Database, id: string) {
-  const n = await getNote(db, id);
-  if (!n?.paper_lock) return null;
-  const row = await db.prepare("SELECT title, icon, html FROM paper_pages WHERE note_id = ?").bind(id).first<{ title: string; icon: string | null; html: string }>();
-  if (!row) throw new BadRequest("The words of this page are missing.");
-  const title = (await Vault.open("paper_pages", id, "title", row.title)) ?? "", icon = await Vault.open("paper_pages", id, "icon", row.icon), html = (await Vault.open("paper_pages", id, "html", row.html)) ?? "";
-  const t = now();
-  const [st, sh, sx, si] = await Promise.all([sealCol(id, "title", title), sealCol(id, "html", html), sealCol(id, "text", toText(html)), sealCol(id, "icon", icon)]);
-  await db.batch([
-    db.prepare("UPDATE notes SET title=?, html=?, text=?, icon=?, paper_lock=NULL, revision=revision+1, updated_at=? WHERE id=?").bind(st, sh, sx, si, t, id),
-    db.prepare("DELETE FROM paper_pages WHERE note_id = ?").bind(id),
-    db.prepare("DELETE FROM paper_grants WHERE note_id = ?").bind(id),
-    db.prepare("DELETE FROM paper_requests WHERE note_id = ?").bind(id),
-    ...linkStmts(db, id, html),
-    ...changeStmts(db, id, "edited", "user", t),
-  ]);
-  return (await getNote(db, id))!;
 }
 
 // ---------------------------------------------------------------- history
@@ -525,7 +468,6 @@ export async function restoreVersion(db: D1Database, id: string, actionId: numbe
 export async function setShare(db: D1Database, id: string, enabled: boolean) {
   const n = await getNote(db, id);
   if (!n) return null;
-  if (enabled && n.paper_lock) throw new BadRequest("A page locked with a paper card can't be shared.");
   const slug = enabled ? n.share_slug ?? crypto.randomUUID().replace(/-/g, "").slice(0, 14) : null;
   await db.prepare("UPDATE notes SET share_slug = ? WHERE id = ?").bind(slug, id).run();
   return { share_slug: slug };
@@ -551,15 +493,12 @@ async function openComment(r: CommentRow) {
   try { anchor = cleanAnchor(JSON.parse((await Vault.open("comments", r.id, "anchor", r.anchor)) ?? "null")); } catch { /* none */ }
   return { ...r, body: (await Vault.open("comments", r.id, "body", r.body)) ?? "", anchor, replace_with: await Vault.open("comments", r.id, "replace_with", r.replace_with) };
 }
-const paperLocked = async (db: D1Database, id: string) => !!(await db.prepare("SELECT 1 AS x FROM notes WHERE id = ? AND paper_lock IS NOT NULL").bind(id).first());
 export async function listComments(db: D1Database, id: string) {
-  if (await paperLocked(db, id)) return []; // a paper-locked page has no comments: they'd quote its words outside the lock
   const rows = (await db.prepare("SELECT * FROM comments WHERE note_id = ? ORDER BY created_at").bind(id).all<CommentRow>()).results;
   return Promise.all(rows.map(openComment));
 }
 export async function addComment(db: D1Database, id: string, body: string, o: { anchor?: unknown; kind?: "comment" | "suggestion"; author?: Source; replace?: string } = {}) {
   await guardAi(db, { source: o.author ?? "user" }, id);
-  if (await paperLocked(db, id)) throw new BadRequest("Comments aren't available on a page locked with a paper card.");
   const kind = o.kind ?? "comment", anchor = cleanAnchor(o.anchor);
   const c = { id: crypto.randomUUID(), note_id: id, body: clip(body, 4000), resolved: 0, created_at: now(), kind, author: o.author ?? "user", anchor, replace_with: kind === "suggestion" ? clip(o.replace ?? "", 4000) : null, outcome: null };
   if (kind === "comment" && !c.body.trim()) throw new BadRequest("empty comment");

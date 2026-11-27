@@ -155,7 +155,7 @@ export async function notifyAll(env: Env, payload: Payload, urgent: boolean) {
   await sendAll(env, subs, payload);
 }
 
-/** A notification for phones only (a Paper Lock request: the phone holds the card, the computer asking shouldn't buzz itself). Never held back by quiet hours: someone is waiting. */
+/** A notification for phones only. Never held back by quiet hours: someone is waiting. */
 export async function notifyPhones(env: Env, payload: Payload) {
   if (!vapidKey(env)) return;
   const subs = (await listSubs(env.DB)).filter((s) => /^(iPhone|Android)/.test(s.label));

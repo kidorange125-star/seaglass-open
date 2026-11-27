@@ -3,9 +3,7 @@ import { extractCards } from "../study/cards";
 import { setWeakSpotsOn, weakSpotsOn } from "../study/weak";
 import { TaskSteps } from "./TaskSteps";
 import { FORMATS } from "../editor/formats";
-import { isInkDevice, isPhone } from "../device";
-import { PaperLocked } from "../paper/PaperLocked";
-import { cancelRelock, dropGrant, grantOf, keepOpen, relockNow, relockSoon } from "../paper/grants";
+import { isInkDevice } from "../device";
 import { DailyPanel } from "./DailyPanel";
 import { RelatedNotes } from "./RelatedNotes";
 import { FileQuestion, LayoutTemplate, Table2, X } from "lucide-react";
@@ -45,17 +43,6 @@ export function PageView({ id, peek = false }: { id: string; peek?: boolean }) {
   const cards = useMemo(() => (note ? extractCards(note.html) : []), [note?.html]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { if (note) api.backlinks(id).then(setBacklinks).catch(() => {}); }, [id, version]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Paper Lock: while this device shows a paper-locked page's words it keeps the lock open (a ping every few seconds), notices
-  // when the phone's Relock (or the lock running out) closed it, and relocks as soon as the page is left or closed (paper/grants.ts).
-  const paperOpen = !!note?.paper_unlocked;
-  const reloadRef = useRef(reload); reloadRef.current = reload;
-  useEffect(() => {
-    if (!paperOpen) return;
-    cancelRelock(id);
-    let on = true;
-    const t = setInterval(async () => { if (!(await keepOpen(id)) && on) { store.toast("The paper lock closed"); reloadRef.current(); } }, 4000);
-    return () => { on = false; clearInterval(t); relockSoon(id); };
-  }, [paperOpen, id]); // eslint-disable-line react-hooks/exhaustive-deps
   // The title is written by hand (above a Cornell sheet's top line, or the first line on lined paper; Handwriting.tsx):
   // it names the page, and keeps naming it as it's rewritten, unless the name was typed (then it's their and stays).
   // the title box fits its text however the title changes (typed, or read from handwriting) and when the width does
@@ -104,8 +91,6 @@ export function PageView({ id, peek = false }: { id: string; peek?: boolean }) {
   if (missing) return <div className="blank"><FileQuestion size={40} strokeWidth={1.4} /><b>This page doesn't exist</b><span>It may have been deleted. <a className="lnk" href="#/">Go home</a></span></div>;
   if (!note) return <div className="page"><div className="topbar"><div className="skeleton" style={{ width: 180, height: 20 }} /></div><div className="body"><div className="skeleton" style={{ width: "55%", height: 44, marginBottom: 28 }} /><div className="skeleton" style={{ height: 16, marginBottom: 12 }} /><div className="skeleton" style={{ height: 16, width: "88%", marginBottom: 12 }} /><div className="skeleton" style={{ height: 16, width: "70%" }} /></div></div>;
 
-  if (note.paper_lock && !note.paper_unlocked) return <PaperLocked note={note} peek={peek} onOpened={reload} />;
-  const paper = !!note.paper_lock; // opened on this device: its words are shown, and it can't be shared, copied or commented on
   const parent = note.parent_id ? store.byId.get(note.parent_id) : undefined;
   const isRow = parent?.kind === "database";
   const locked = !!note.locked;
@@ -143,13 +128,12 @@ export function PageView({ id, peek = false }: { id: string; peek?: boolean }) {
           <span className="cur"><PageIcon icon={note.icon} kind={note.kind} size={14} /> {note.title || "New page"}</span>
         </div>
         <span className={`status ${status}`} title={new Date(note.updated_at).toLocaleString()}>
-          {paper && <><ILock size={14} /> Paper-locked · </>}
           {locked && <><ILock size={14} /> Locked · </>}
           {aiHidden && <><IEyeOff size={14} /> Hidden from AI · </>}
           {status === "saving" ? "Saving…" : status === "offline" ? "Saved on this device, will sync" : status === "error" ? "Couldn't save, will retry" : status === "conflict" ? "Changed elsewhere" : `Edited ${timeAgo(note.updated_at)}`}
         </span>
         <div className="actions">
-          <div className="rel" style={paper ? { display: "none" } : undefined}>
+          <div className="rel">
             <button className={`ghost share-btn ${note.share_slug ? "on" : ""}`} onClick={() => setPop(pop === "share" ? null : "share")}>{note.share_slug ? <><IGlobe size={16} /> Shared</> : "Share"}</button>
             {pop === "share" && (
               <Popover onClose={() => setPop(null)} className="share-pop">
@@ -159,8 +143,8 @@ export function PageView({ id, peek = false }: { id: string; peek?: boolean }) {
             )}
           </div>
           {note.kind !== "database" && !locked && isInkDevice() && !ink && <button className="ghost icon-btn tb-pen" title="Write by hand (Apple Pencil or finger)" aria-label="Write by hand" onClick={() => dispatchEvent(new CustomEvent("seaglass:ink", { detail: { end: true } }))}><IPencil /></button>}
-          <button style={paper ? { display: "none" } : undefined} className={`ghost icon-btn tb-wide ${panel === "comments" ? "on" : ""}`} title="Comments" onClick={() => setPanel(panel === "comments" ? null : "comments")}><IComment /></button>
-          <button style={paper ? { display: "none" } : undefined} className={`ghost icon-btn tb-wide ${panel === "history" ? "on" : ""}`} title="Version history" onClick={() => setPanel(panel === "history" ? null : "history")}><IClock /></button>
+          <button className={`ghost icon-btn tb-wide ${panel === "comments" ? "on" : ""}`} title="Comments" onClick={() => setPanel(panel === "comments" ? null : "comments")}><IComment /></button>
+          <button className={`ghost icon-btn tb-wide ${panel === "history" ? "on" : ""}`} title="Version history" onClick={() => setPanel(panel === "history" ? null : "history")}><IClock /></button>
           <button className="ghost icon-btn tb-wide" title={note.favorite ? "Remove from Favorites" : "Add to Favorites"} onClick={toggleFav}><span style={{ color: note.favorite ? "#f6c050" : undefined, display: "inline-flex" }}><IStar filled={!!note.favorite} /></span></button>
           <div className="rel">
             <button className="ghost icon-btn" title="Page options" onClick={() => setPop(pop === "menu" ? null : "menu")}><IMore /></button>
@@ -178,7 +162,7 @@ export function PageView({ id, peek = false }: { id: string; peek?: boolean }) {
                 <label className="switch"><input type="checkbox" checked={!!note.full_width} onChange={(e) => edit({ full_width: e.target.checked }, true)} /> Full width</label>
                 <label className="switch"><input type="checkbox" checked={locked} onChange={(e) => edit({ locked: e.target.checked }, true)} /> Lock page <small className="muted">blocks all edits</small></label>
                 <label className="switch" title={note.ai_hidden_inherited ? "A page above this one is hidden from AI, so this one is too. Turn it off there." : undefined}>
-                  <input type="checkbox" checked={aiHidden} disabled={!!note.ai_hidden_inherited || paper} onChange={async (e) => {
+                  <input type="checkbox" checked={aiHidden} disabled={!!note.ai_hidden_inherited} onChange={async (e) => {
                     const hidden = e.target.checked, show = (v: number) => { edit({ ai_hidden: v }); store.patchTreeLocal(id, { ai_hidden: v }); };
                     show(hidden ? 1 : 0); // flip it now; put it back if the server says no
                     try {
@@ -188,26 +172,12 @@ export function PageView({ id, peek = false }: { id: string; peek?: boolean }) {
                     } catch { show(hidden ? 0 : 1); store.toast("Couldn't change that. Try again."); }
                   }} /> Hide from AI <small className="muted">{note.ai_hidden_inherited ? "a page above is hidden" : `${agentName()} and Claude can't see it or its sub-pages`}</small>
                 </label>
-                {!paper && note.kind === "page" && <button onClick={async () => {
-                  setPop(null);
-                  if (!isPhone()) { store.toast("Paper Lock cards are drawn and scanned on your phone"); return; }
-                  await flush(); dispatchEvent(new CustomEvent("seaglass:paper-lock", { detail: { id } }));
-                }}><ILock size={18} /> Lock with a paper card…</button>}
-                {paper && <>
-                  <button onClick={() => { setPop(null); relockNow(id); reload(); }}><ILock size={18} /> Lock now</button>
-                  <button onClick={async () => {
-                    setPop(null);
-                    if (!(await store.confirm("Remove the paper lock? This page goes back to being an ordinary page. It stays hidden from AI until you turn that off."))) return;
-                    try { await flush(); await api.paperRemoveLock(id, grantOf(id) ?? ""); dropGrant(id); await store.refreshTree(); reload(); store.toast("Paper lock removed"); }
-                    catch (e) { store.toast((e as Error).message); }
-                  }}><ILock size={18} /> Remove Paper Lock…</button>
-                </>}
                 <label className="switch"><input type="checkbox" checked={!!note.is_template} onChange={(e) => edit({ is_template: e.target.checked }, true)} /> Use as template</label>
                 {note.kind !== "database" && <WeakToggle />}
                 <div className="mp-sep" />
                 <button onClick={() => { setPop(null); toggleFav(); }}><IStar size={18} /> {note.favorite ? "Remove from Favorites" : "Add to Favorites"}</button>
                 <button onClick={() => { setPop(null); void navigator.clipboard?.writeText(`${location.origin}/#/p/${id}`); store.toast("Copied link to page"); }}><ILink size={18} /> Copy link <kbd>Ctrl+L</kbd></button>
-                {!paper && <button onClick={() => { setPop(null); void duplicate(); }}><ICopy size={18} /> Duplicate</button>}
+                {<button onClick={() => { setPop(null); void duplicate(); }}><ICopy size={18} /> Duplicate</button>}
                 {!locked && !isRow && <button onClick={() => setPop("move")}><IOpen size={18} /> Move to…</button>}
                 <button onClick={async () => { setPop(null); await flush(); store.setStudy(id); }}><ICheckSquare size={18} /> Study flashcards{cards.length ? ` (${cards.length})` : ""}</button>
                 {note.kind !== "database" && <button onClick={async () => { setPop(null); await flush(); store.setQuiz([id]); }}><ICheckSquare size={18} /> Practice test</button>}
@@ -224,8 +194,8 @@ export function PageView({ id, peek = false }: { id: string; peek?: boolean }) {
                 {!locked && note.kind !== "database" && <button onClick={() => setPop("formats")}><ITemplate size={18} /> Add a note format…</button>}
                 {!locked && <button onClick={async () => { setPop(null); await flush(); store.setPhotoOpen(true); }}><IImage size={18} /> Photo to notes here</button>}
                 {!locked && note.kind !== "database" && <button onClick={async () => { setPop(null); await flush(); store.setVoiceOpen(true); }}><IClock size={18} /> Record a voice note</button>}
-                {!paper && <button onClick={() => { setPop(null); setPanel("comments"); }}><IComment size={18} /> Comments</button>}
-                {!paper && <button onClick={() => { setPop(null); setPanel("history"); }}><IClock size={18} /> Version history</button>}
+                {<button onClick={() => { setPop(null); setPanel("comments"); }}><IComment size={18} /> Comments</button>}
+                {<button onClick={() => { setPop(null); setPanel("history"); }}><IClock size={18} /> Version history</button>}
                 <button onClick={() => { setPop(null); exportMd(); }}><IArrowDown size={18} /> Export Markdown</button>
                 <button onClick={() => { setPop(null); exportHtml(); }}><IArrowDown size={18} /> Export HTML</button>
                 {note.kind === "page" && !locked && <button onClick={() => { setPop(null); importMd(); }}><IUpload size={18} /> Import Markdown</button>}

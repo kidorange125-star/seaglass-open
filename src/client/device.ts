@@ -24,7 +24,7 @@ export function isInkDevice(): boolean {
 // The page knows which it is, for styles (notion.css: a drawing is for reading on the iPhone and the computer).
 if (typeof document !== "undefined") { try { document.documentElement.dataset.ink = isInkDevice() ? "tablet" : "other"; } catch { /* no DOM */ } }
 
-/** A phone: Paper Lock cards are drawn and scanned only on one, and a phone is where unlock requests arrive. `sg.device` =
+/** A phone (by user agent). `sg.device` =
  *  "phone" makes this device one (tests). A tablet is not a phone. */
 export function isPhone(): boolean {
   try { if (localStorage.getItem("sg.device") === "phone") return true; } catch { /* no storage: guess */ }

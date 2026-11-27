@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, type ReactElement } from "react";
 import { MovePicker } from "./MovePicker";
 import { EDITION } from "../edition";
 import { AccountDialog } from "./AccountDialog";
+import { PermissionsDialog } from "./PermissionsDialog";
 import { IBell, ICalendar, ICheckSquare, IChevron, IChevronsUpDown, IDatabase, ICollapse, ICompose, ICopy, IDownload, IEyeOff, IHome, ILink, ILock, ILogout, IMore, IOpen, IPencil, IPlus, ISearch, ISettings, IShield, IStar, ITrash, IUpload, IStudy } from "../ui-icons";
 import { api } from "../api";
 import { useStore } from "../store";
@@ -39,6 +40,7 @@ export function Sidebar() {
   const [movingId, setMovingId] = useState<string | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [permsOpen, setPermsOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const toggle = (id: string, force?: boolean) => setOpen((o) => {
@@ -145,13 +147,13 @@ export function Sidebar() {
       )}
       <div className="mp-sep" />
       <button onClick={() => { setSettings(null); setAccountOpen(true); }}><ISettings size={S} /> Account & household</button>
+      <button onClick={() => { setSettings(null); setPermsOpen(true); }}><IShield size={S} /> Assistant permissions</button>
       <button onClick={() => { setSettings(null); setSetupOpen(true); }}><IShield size={S} /> Setup & status</button>
       <button onClick={() => { setSettings(null); s.setMemoryOpen(true); }}><ICompose size={S} /> {agentName()}'s memory</button>
       <button onClick={() => { setSettings(null); s.setProactiveOpen(true); }}><IBell size={S} /> Routines & saved prompts</button>
       <button onClick={() => { setSettings(null); s.setNotifyOpen(true); }}><IBell size={S} /> Notifications</button>
       <button onClick={() => { setSettings(null); s.setCaptureOpen(true); }}><IPlus size={S} /> Quick capture</button>
       <button onClick={() => { setSettings(null); s.setBackupOpen(true); }}><IShield size={S} /> Backups</button>
-      <button onClick={() => { setSettings(null); dispatchEvent(new CustomEvent("seaglass:paper-manage")); }}><ILock size={S} /> Paper Lock</button>
       <button onClick={async () => { setSettings(null); const d = await api.exportAll(); const url = URL.createObjectURL(new Blob([JSON.stringify(d, null, 2)], { type: "application/json" })); const a = document.createElement("a"); a.href = url; a.download = `seaglass-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click(); }}><IDownload size={S} /> Export full backup</button>
       <button onClick={() => fileRef.current?.click()}><IUpload size={S} /> Import backup</button>
       <div className="mp-sep" />
@@ -228,6 +230,7 @@ export function Sidebar() {
       <SidebarResizer />
       {setupOpen && <SetupModal onClose={() => setSetupOpen(false)} />}
       {accountOpen && <AccountDialog onClose={() => setAccountOpen(false)} />}
+      {permsOpen && <PermissionsDialog onClose={() => setPermsOpen(false)} />}
     </aside>
   );
 }
