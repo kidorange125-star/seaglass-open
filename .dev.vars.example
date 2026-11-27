@@ -1,0 +1,14 @@
+# Copy to .dev.vars for local development (it's gitignored).
+# Keep PUBLIC_URL blank locally: Seaglass uses its own address.
+PUBLIC_URL=
+# Encryption at rest (required). Make one with: npm run data:keygen -- --dev   (adds it to .dev.vars for you)
+# DATA_KEY=<32 random bytes, base64url>
+# The assistant: a scripted test model (no tokens spent), or a real Claude API key.
+# ANTHROPIC_API_KEY=mock
+# ANTHROPIC_API_KEY=sk-ant-...
+# Only for the automated test suites: skip sign-in on localhost. Never set this on a deployed copy (it's ignored there).
+# AUTH_OPEN=1
+# Task notifications (Web Push). Generate with: npm run push:keygen
+# VAPID_PRIVATE_KEY='{"kty":"EC",...}'
+# Workload identity federation can't be tested fully on localhost (the Claude API must reach your issuer over public HTTPS):
+# WIF_SIGNING_KEY='{"kty":"EC",...}'         # from: npm run wif:keygen

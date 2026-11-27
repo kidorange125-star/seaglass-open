@@ -1,0 +1,24 @@
+import "@fontsource-variable/jetbrains-mono";
+import { createRoot } from "react-dom/client";
+import { App } from "./App";
+import { registerServiceWorker } from "./push";
+import "./styles.css";
+import "./notion.css";
+import "./agent.css";
+import "./spotlight.css";
+import "./glass.css";
+import "./motion.css";
+import "./features.css";
+import "./waffle.css";
+import "./proactive.css";
+import "./chat.css";
+import "./study.css";
+import "./calendar.css";
+import "./welcome.css";
+import "./live.css";
+import "./paper/paper.css";
+import { initGlass } from "./glass";
+
+registerServiceWorker();
+initGlass();
+createRoot(document.getElementById("root")!).render(<App />);

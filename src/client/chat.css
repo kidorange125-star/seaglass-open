@@ -1,0 +1,103 @@
+/* The assistant's conversation as a texting interface (AgentPanel.tsx): your messages right in blue bubbles, the
+   assistant's left in grey bubbles (its face is only in the header), times between quiet spells, typing dots,
+   quick-reply chips under what it suggests, and a rounded message field. Loaded after agent.css and notion.css. */
+:root { --tx-me: #0a84ff; --tx-me-ink: #fff; --tx-them: #e9e9eb; --tx-them-ink: #1c1c1e; }
+:root[data-theme="dark"] { --tx-them: #2c2c2e; --tx-them-ink: #f2f2f7; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --tx-them: #2c2c2e; --tx-them-ink: #f2f2f7; } }
+
+/* Nothing in the conversation may pan it sideways (iOS lets you drag any overflowing scroller left and right):
+   long chips and links shrink or wrap, and wide tables/code scroll inside their own box. */
+.agent .ag-scroll { gap: 0; padding: 10px 12px 12px; overflow-x: hidden; overscroll-behavior-x: none; }
+.tx-row { display: flex; flex-direction: column; }
+.tx-row.first { margin-top: 10px; }
+.tx-row:not(.first) { margin-top: 2px; }
+.tx-time { align-self: center; margin: 8px 0 6px; font-size: 11px; font-weight: 500; color: var(--text-3); }
+.tx-divider { display: flex; align-items: center; gap: 10px; margin: 12px 0 4px; color: var(--text-3); font-size: 11px; }
+.tx-divider::before, .tx-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.tx-sys { align-self: center; max-width: 85%; text-align: center; font-size: 12px; color: var(--text-3); margin: 6px 0; }
+.tx-line { display: flex; align-items: flex-end; gap: 6px; min-width: 0; }
+.tx-row.me .tx-line { justify-content: flex-end; }
+.tx-col { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; max-width: 88%; }
+
+.tx-bubble { max-width: 82%; padding: 7px 12px; border-radius: 18px; font-size: 15px; line-height: 1.4; overflow-wrap: anywhere; }
+.tx-bubble.me { background: var(--tx-me); color: var(--tx-me-ink); white-space: pre-wrap; }
+.tx-bubble.them { max-width: 100%; background: var(--tx-them); color: var(--tx-them-ink); }
+/* the tail: the last bubble of a run gets a squared corner on its side, like Messages */
+.tx-row.me.last .tx-bubble.me { border-bottom-right-radius: 5px; }
+.tx-row.them.last .tx-col > .tx-bubble.them:last-of-type { border-bottom-left-radius: 5px; }
+.tx-bubble.them.ag-md > :first-child { margin-top: 0; } .tx-bubble.them.ag-md > :last-child { margin-bottom: 0; }
+.tx-bubble.them.ag-md p { margin: .35em 0; }
+.tx-bubble.them.ag-md a { color: inherit; text-decoration: underline; }
+.tx-bubble.them.ag-md code { background: rgba(127, 127, 127, .18); }
+.tx-bubble.them.ag-md pre { background: rgba(0, 0, 0, .06); }
+.tx-bubble.them.ag-md table { font-size: 13px; }
+
+/* typing dots */
+.tx-typing { display: inline-flex; gap: 4px; padding: 11px 14px; }
+.tx-typing i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .35; animation: tx-dot 1.2s infinite ease-in-out; }
+.tx-typing i:nth-child(2) { animation-delay: .15s; } .tx-typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes tx-dot { 0%, 60%, 100% { opacity: .3; transform: translateY(0); } 30% { opacity: .85; transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) { .tx-typing i { animation: none; } }
+
+/* tool steps: small grey chips above the reply */
+.tx-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 1px; max-width: 100%; min-width: 0; }
+.tx-tool, .tx-tool span { min-width: 0; }
+.tx-bubble.them.ag-md table { display: block; max-width: 100%; overflow-x: auto; }
+.tx-bubble.them.ag-md pre { max-width: 100%; overflow-x: auto; }
+.tx-tool { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 12px; font-size: 12px; color: var(--text-3); background: transparent; box-shadow: inset 0 0 0 1px var(--border); max-width: 100%; }
+.tx-tool span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tx-tool.error { color: var(--c-red, #e03e3e); }
+.tx-tool:not(:disabled):hover { background: var(--hover); color: var(--text); }
+
+/* quick replies and small notes under a bubble */
+.tx-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
+.tx-chips button { height: 32px; padding: 0 14px; border-radius: 16px; font-size: 14px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--text); }
+.tx-chips button.primary { background: var(--tx-me); color: #fff; box-shadow: none; }
+.tx-meta { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-3); padding: 0 4px; }
+.tx-link { display: inline-flex; align-items: center; gap: 3px; height: auto; padding: 0; background: none; box-shadow: none; color: var(--accent); font-size: 12px; }
+.tx-link:hover { text-decoration: underline; background: none; }
+.tx-error { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--c-red, #e03e3e); padding: 0 4px; }
+.tx-col { position: relative; }
+/* copy / try again: a small floating toolbar on hover, so it never pushes the layout around */
+.tx-actions { position: absolute; top: -12px; right: 0; z-index: 2; display: flex; gap: 0; padding: 1px; border-radius: 8px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border), var(--shadow-sm, 0 1px 3px rgba(0,0,0,.08)); opacity: 0; pointer-events: none; transition: opacity .15s; }
+.tx-row:hover .tx-actions, .tx-actions:focus-within { pointer-events: auto; }
+.tx-row:hover .tx-actions, .tx-actions:focus-within { opacity: 1; }
+.tx-actions .icon-btn { width: 24px; height: 24px; color: var(--text-3); }
+@media (hover: none) { .tx-actions { display: none; } }
+
+/* the message field: one line, like Messages: @ | text | model, send. A page you pointed it at sits above as a chip. */
+.agent .ag-box { display: grid; grid-template-columns: auto 1fr auto; column-gap: 6px; align-items: end; }
+.agent .ag-ctxrow { display: contents; }
+.agent .ag-ctxrow > .rel { grid-column: 1; grid-row: 2; align-self: end; margin-bottom: 1px; }
+.agent .ag-ctx-chip { grid-column: 1 / -1; grid-row: 1; justify-self: start; margin: 0 0 4px; }
+.agent .ag-box textarea { grid-column: 2; grid-row: 2; min-width: 0; }
+.agent .ag-boxfoot { grid-column: 3; grid-row: 2; display: flex; align-items: center; gap: 4px; padding: 0; margin: 0; }
+.agent .ag-modelbtn { font-size: 12px; height: 28px; padding: 0 6px; color: var(--text-3); }
+.agent .ag-at { width: 30px; height: 30px; border-radius: 50%; }
+/* the message field: a rounded pill with a round send button */
+.agent .ag-compose { padding: 6px 10px 10px; border-top: 0; }
+.agent .ag-box { border-radius: 22px; padding: 5px 5px 5px 6px; box-shadow: inset 0 0 0 1px var(--border-strong); }
+.agent .ag-box:focus-within { box-shadow: inset 0 0 0 1px var(--tx-me); }
+.agent .ag-box textarea { font-size: 15px; padding: 5px 0; }
+.agent .ag-boxfoot .ag-hint { display: none; }
+.agent .ag-box .send { width: 30px; height: 30px; border-radius: 50%; background: var(--tx-me); color: #fff; }
+.agent .ag-box .send:disabled { background: var(--hover); color: var(--text-3); }
+@media (hover: none) { .tx-bubble { font-size: 16px; } .agent .ag-box textarea { font-size: 16px; } }
+/* A message that wraps: the text takes the whole width, @ / model / send move to a row underneath. */
+.agent .ag-box.multi textarea { grid-column: 1 / -1; padding: 5px 8px 4px; }
+.agent .ag-box.multi .ag-ctxrow > .rel, .agent .ag-box.multi .ag-boxfoot { grid-row: 3; }
+.agent .ag-box.multi .ag-boxfoot { justify-self: end; }
+/* Phones: full screen, so leave room for the notch and the home indicator (the rules above replace notion.css's). */
+@media (max-width: 859px) {
+  /* agent.css's .ag-head comes after notion.css, so its phone header (room for the status bar) is set again here */
+  .agent .ag-head { height: calc(48px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left)); }
+  .agent .ag-head-jeff { top: calc(50% + env(safe-area-inset-top) / 2); }
+  .agent .ag-compose { padding-bottom: calc(10px + env(safe-area-inset-bottom)); padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); }
+  .agent .ag-scroll { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+  .agent .ag-box .send, .agent .ag-at { width: 34px; height: 34px; }
+  .agent .ag-modelbtn { height: 34px; }
+}
+
+/* The model button sits at the right of the message field, so its menu opens leftwards from there and never runs
+   past the chat window's edge. */
+@media (min-width: 860px) { .agent .ag-model-pop { left: auto; right: 0; max-width: calc(100vw - 24px); } }

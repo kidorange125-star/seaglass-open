@@ -1,0 +1,84 @@
+/* The assistant's inbox (components/Inbox.tsx) and Settings > Routines & saved prompts (components/ProactiveDialog.tsx). */
+.ib-group { width: 100%; margin-top: 4px; }
+.ib-group-head { display: flex; align-items: center; }
+.ib-group-head button { height: 24px; padding: 0 6px; font-size: 12px; color: var(--text-3); }
+.inbox-list { display: flex; flex-direction: column; gap: 8px; width: 100%; text-align: left; }
+.inbox-card { border-radius: 12px; padding: 10px 12px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border-strong, rgba(0,0,0,.1)); }
+.inbox-card.urgent { box-shadow: inset 0 0 0 1.5px var(--c-orange, #d9730d); }
+.inbox-card.old { opacity: .62; }
+.ib-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ib-head b { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ib-head small { font-size: 12px; color: var(--text-3); flex: none; }
+.ib-icon { display: grid; place-items: center; width: 18px; color: var(--text-3); flex: none; }
+.ib-body { margin: 6px 0 0; font-size: 14px; line-height: 1.5; color: var(--text-2, var(--text)); }
+.ib-body.ag-md p { margin: .3em 0; }
+.ib-prop { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding: 6px 8px; border-radius: 8px; background: var(--hover); font-size: 13px; }
+.ib-prop small { color: var(--text-3); }
+.ib-actions { display: flex; align-items: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.ib-actions button { height: 30px; padding: 0 10px; font-size: 13px; gap: 5px; display: inline-flex; align-items: center; border-radius: 8px; }
+.ib-actions .icon-btn { width: 30px; padding: 0; justify-content: center; color: var(--text-3); }
+.ib-actions .icon-btn.on { color: var(--accent); }
+.ib-actions .grow { flex: 1; }
+.ib-count, .sb-badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--c-orange, #e16b16); color: #fff; font-size: 11px; font-weight: 600; display: inline-grid; place-items: center; line-height: 1; }
+.fab-badge { position: absolute; top: -2px; right: -2px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--c-orange, #e16b16); color: #fff; font-size: 11px; font-weight: 600; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--surface, #fff); }
+.ib-view { display: flex; flex-direction: column; gap: 10px; }
+.ib-view-head { display: flex; align-items: center; gap: 8px; }
+.ib-view-head b { font-size: 15px; }
+.ib-view-head button { height: 28px; padding: 0 8px; gap: 4px; display: inline-flex; align-items: center; }
+.ib-view-head .flip { transform: rotate(180deg); }
+.ib-empty { color: var(--text-3); font-size: 14px; line-height: 1.5; }
+@media (hover: none) { .ib-actions button { height: 36px; } .ib-actions .icon-btn { width: 36px; } }
+
+.modal.proactive { width: min(560px, calc(100vw - 32px)); max-height: min(760px, calc(100vh - 48px)); display: flex; flex-direction: column; }
+.pd-body { overflow-y: auto; padding: 4px 18px 18px; display: flex; flex-direction: column; gap: 18px; }
+.pd-section { display: flex; flex-direction: column; gap: 6px; }
+.pd-title { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+.pd-title button { height: 28px; padding: 0 10px; font-size: 13px; gap: 4px; display: inline-flex; align-items: center; font-weight: 500; }
+.pd-empty { color: var(--text-3); font-size: 13px; line-height: 1.5; margin: 2px 0; }
+/* the routine gallery: starters that fill the form */
+.pd-gallery { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 6px; }
+.pd-gallery > small { font-size: 12px; color: var(--text-3); }
+.pd-starters { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.pd-starter { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; height: auto; padding: 8px 10px; border-radius: 10px; text-align: left; white-space: normal; background: transparent; box-shadow: inset 0 0 0 1px var(--border); }
+.pd-starter:hover { background: var(--hover); }
+.pd-starter b { font-size: 13.5px; font-weight: 600; }
+.pd-starter small { font-size: 12px; color: var(--text-3); font-weight: 400; }
+@media (max-width: 600px) { .pd-starters { grid-template-columns: 1fr 1fr; } .pd-starter { min-height: 52px; } .pd-starter b { font-size: 15px; } }
+.pd-item { display: flex; align-items: center; gap: 4px; border-radius: 8px; }
+.pd-item:hover { background: var(--hover); }
+.pd-item.off { opacity: .55; }
+.pd-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 6px 8px; background: transparent; box-shadow: none; text-align: left; height: auto; }
+.pd-main b { font-size: 14px; font-weight: 500; }
+.pd-main small { font-size: 12px; color: var(--text-3); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-form { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 10px; background: var(--hover); }
+.pd-form input, .pd-form textarea { width: 100%; font: inherit; font-size: 14px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-strong, rgba(0,0,0,.12)); background: var(--surface); color: var(--text); }
+.pd-form textarea { resize: vertical; min-height: 84px; }
+.pd-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pd-row input[type="time"] { width: auto; }
+.pd-days { display: flex; gap: 4px; }
+.pd-days button { width: 32px; height: 32px; padding: 0; border-radius: 16px; font-size: 13px; justify-content: center; }
+.pd-days button.on { background: var(--accent); color: #fff; box-shadow: none; }
+.pd-check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.pd-check input { width: auto; }
+.pd-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.pd-name { display: flex; align-items: center; gap: 4px; }
+.pd-name span { font-weight: 600; color: var(--text-3); }
+.pd-switch input { width: 18px; height: 18px; }
+.pd-checkin { flex-direction: row; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--hover); }
+.pd-checkin div { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.pd-checkin small { color: var(--text-3); font-size: 12px; line-height: 1.45; }
+.pd-checkin button { flex: none; }
+@media (pointer: coarse) { .pd-form input, .pd-form textarea { font-size: 16px; } }
+.pd-title .grow, .ib-group-head .grow, .ib-view-head .grow { flex: 1; }
+
+/* The one ongoing conversation (AgentPanel.tsx) */
+.ag-row { display: flex; flex-direction: column; gap: 14px; }
+.ag-day, .ag-divider { display: flex; align-items: center; gap: 10px; color: var(--text-3); font-size: 12px; font-weight: 500; margin: 6px 0 -2px; }
+.ag-day::before, .ag-day::after, .ag-divider::before, .ag-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.ag-divider { font-weight: 400; font-style: italic; }
+.ag-older { align-self: center; height: 28px; padding: 0 12px; font-size: 13px; color: var(--text-3); }
+.ag-empty-note { margin: 0; max-width: 300px; text-align: center; color: var(--text-3); font-size: 13px; line-height: 1.5; }
+.ag-own .inbox-list { width: 100%; }
+/* "On demand only" switch at the top of Settings > Routines */
+.pd-mode { padding: 10px 14px 12px; border-radius: 10px; background: var(--hover); flex: none; }
+.pd-mode p { margin: 4px 0 0; font-size: 13px; line-height: 1.45; }

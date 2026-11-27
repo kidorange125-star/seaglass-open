@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#191919" media="(prefers-color-scheme: dark)" />
+    <meta name="description" content="Your own private notes app, with Waffle." />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Seaglass" />
+    <title>Seaglass</title>
+    <script>
+      // Pick the theme before anything draws, so the boot screen (and the first paint) is already light or dark.
+      try { var t = localStorage.getItem("sg.theme") || "system"; if (t === "system") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; document.documentElement.dataset.theme = t; } catch (e) {}
+    </script>
+    <style>
+      /* Boot screen: the two pieces of sea glass wash in and settle, the overlap deepens, the glint catches, then the
+         app fades in over it (src/client/boot.ts). The mark is drawn by npm run icons from src/client/logo.ts. */
+      #boot { position: fixed; inset: 0; z-index: 2147483000; display: grid; place-content: center; justify-items: center; gap: 16px; padding-bottom: 7vh; background: #fff; color: #2c2c2b; transition: opacity .3s ease, visibility 0s linear .3s; animation: boot-giveup .3s ease 9s forwards; }
+      :root[data-theme="dark"] #boot { background: #191919; color: #f0efed; }
+      #boot.out { opacity: 0; visibility: hidden; }
+      .boot-mark { width: 92px; height: 92px; overflow: visible; transition: transform .3s cubic-bezier(.3, 0, .2, 1); }
+      #boot.out .boot-mark { transform: scale(1.07); }
+      .boot-mark g, .boot-mark path { transform-box: fill-box; transform-origin: center; }
+      .boot-mark .lg-back { animation: boot-back .64s cubic-bezier(.2, .85, .25, 1.14) .05s both; }
+      .boot-mark .lg-front { animation: boot-front .68s cubic-bezier(.2, .85, .25, 1.14) .16s both; }
+      .boot-mark .lg-overlap { animation: boot-fade .28s ease-out .64s both; }
+      .boot-mark .lg-glint { stroke-dasharray: 11; animation: boot-glint .34s cubic-bezier(.3, 0, .2, 1) .78s both; }
+      .boot-name { font: 650 21px/1 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Helvetica, Arial, sans-serif; letter-spacing: -.012em; animation: boot-name .5s cubic-bezier(.2, .8, .2, 1) .72s both; }
+      @keyframes boot-back { from { opacity: 0; transform: translate(10px, -12px) rotate(16deg) scale(.9); } 45% { opacity: 1; } to { opacity: 1; transform: none; } }
+      @keyframes boot-front { from { opacity: 0; transform: translate(-11px, 13px) rotate(-14deg) scale(.9); } 45% { opacity: 1; } to { opacity: 1; transform: none; } }
+      @keyframes boot-fade { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes boot-glint { from { stroke-dashoffset: 11; opacity: 0; } 30% { opacity: 1; } to { stroke-dashoffset: 0; opacity: 1; } }
+      @keyframes boot-name { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+      @keyframes boot-giveup { to { opacity: 0; visibility: hidden; } }
+      @media (prefers-reduced-motion: reduce) { #boot * { animation: none !important; transition: none !important; } }
+    </style>
+  </head>
+  <body>
+    <div id="boot" aria-hidden="true"><!-- boot:mark --><svg class="boot-mark" viewBox="0 0 64 64" aria-hidden="true"><defs><clipPath id="boot-clip"><path d="M32.9 12.4 Q37.8 9.8 43.1 8.1 Q47 6.5 49.6 9.8 Q52.3 12.4 54.4 15.7 Q57 19 56.2 23.1 Q56 27.1 54.8 30.9 Q54 35 50.1 36.6 Q47.9 38 45.4 38.4 Q41.5 40 38.9 36.7 Q37 34.9 35.6 32.3 Q33 29 31.9 24.9 Q30.5 21.4 30.1 18.1 Q29 14 32.9 12.4 Z"/></clipPath></defs><g class="lg-back"><path d="M32.9 12.4 Q37.8 9.8 43.1 8.1 Q47 6.5 49.6 9.8 Q52.3 12.4 54.4 15.7 Q57 19 56.2 23.1 Q56 27.1 54.8 30.9 Q54 35 50.1 36.6 Q47.9 38 45.4 38.4 Q41.5 40 38.9 36.7 Q37 34.9 35.6 32.3 Q33 29 31.9 24.9 Q30.5 21.4 30.1 18.1 Q29 14 32.9 12.4 Z" fill="#9fd3df"/><path d="M35.4 14 L43.6 10.8 Q46 9.8 47.7 11.8 L50.8 15.5 Q52.5 17.5 50.3 18.8 L46.2 21.2 Q44 22.5 41.4 22.9 L40.1 23.1 Q37.5 23.5 36.3 21.2 L34.2 17.3 Q33 15 35.4 14 Z" fill="#d9f0f4" opacity=".75"/><path d="M32.9 12.4 Q37.8 9.8 43.1 8.1 Q47 6.5 49.6 9.8 Q52.3 12.4 54.4 15.7 Q57 19 56.2 23.1 Q56 27.1 54.8 30.9 Q54 35 50.1 36.6 Q47.9 38 45.4 38.4 Q41.5 40 38.9 36.7 Q37 34.9 35.6 32.3 Q33 29 31.9 24.9 Q30.5 21.4 30.1 18.1 Q29 14 32.9 12.4 Z" fill="none" stroke="#2f6f68" stroke-opacity=".55" stroke-width="1.6"/></g><g class="lg-front"><path d="M10.6 29.6 Q14.6 24.4 19.4 19.9 Q22.5 16.5 26.8 18.3 Q29.8 19 32.7 20.7 Q37 22.5 39 26.7 Q41.5 30.8 43 35.3 Q45 39.5 42.4 43.3 Q39.6 48.1 36.1 52.2 Q33.5 56 29 54.9 Q23.7 54 18.5 52.1 Q14 51 12.4 46.7 Q10.3 42.2 9.1 37.3 Q7.5 33 10.6 29.6 Z" fill="#8fcaae"/><path d="M13.9 30.9 L20.9 23.1 Q22.8 21 25.4 22.1 L30.2 24.2 Q32.8 25.3 31 27.5 L27.8 31.3 Q26 33.5 23.4 34.6 L18.1 36.9 Q15.5 38 14 35.9 L13.5 35.1 Q12 33 13.9 30.9 Z" fill="#d6eee2" opacity=".8"/><path d="M10.6 29.6 Q14.6 24.4 19.4 19.9 Q22.5 16.5 26.8 18.3 Q29.8 19 32.7 20.7 Q37 22.5 39 26.7 Q41.5 30.8 43 35.3 Q45 39.5 42.4 43.3 Q39.6 48.1 36.1 52.2 Q33.5 56 29 54.9 Q23.7 54 18.5 52.1 Q14 51 12.4 46.7 Q10.3 42.2 9.1 37.3 Q7.5 33 10.6 29.6 Z" fill="none" stroke="#2f6f68" stroke-opacity=".7" stroke-width="1.6"/></g><g class="lg-overlap"><path d="M10.6 29.6 Q14.6 24.4 19.4 19.9 Q22.5 16.5 26.8 18.3 Q29.8 19 32.7 20.7 Q37 22.5 39 26.7 Q41.5 30.8 43 35.3 Q45 39.5 42.4 43.3 Q39.6 48.1 36.1 52.2 Q33.5 56 29 54.9 Q23.7 54 18.5 52.1 Q14 51 12.4 46.7 Q10.3 42.2 9.1 37.3 Q7.5 33 10.6 29.6 Z" fill="#3f8e86" clip-path="url(#boot-clip)"/><path d="M10.6 29.6 Q14.6 24.4 19.4 19.9 Q22.5 16.5 26.8 18.3 Q29.8 19 32.7 20.7 Q37 22.5 39 26.7 Q41.5 30.8 43 35.3 Q45 39.5 42.4 43.3 Q39.6 48.1 36.1 52.2 Q33.5 56 29 54.9 Q23.7 54 18.5 52.1 Q14 51 12.4 46.7 Q10.3 42.2 9.1 37.3 Q7.5 33 10.6 29.6 Z" fill="none" stroke="#2f6f68" stroke-opacity=".7" stroke-width="1.6" clip-path="url(#boot-clip)"/></g><path class="lg-glint" d="M14.6 31.2 L21.8 23.4" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg><!-- /boot:mark --><span class="boot-name">Seaglass</span></div>
+    <div id="root"></div>
+    <script type="module" src="/src/client/main.tsx"></script>
+  </body>
+</html>

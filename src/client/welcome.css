@@ -1,0 +1,40 @@
+/* Setup and sign-in (components/Welcome.tsx) and Settings > Account & household (AccountDialog.tsx). */
+.login.welcome { text-align: left; gap: 12px; width: min(420px, calc(100vw - 32px)); }
+.login.welcome .brand { justify-content: flex-start; margin-bottom: 4px; }
+.login.welcome > p { text-align: left; }
+.login.welcome h1 { font-size: 21px; font-weight: 700; letter-spacing: -.015em; margin: 4px 0 2px; }
+.w-steps { display: flex; gap: 16px; list-style: none; margin: 0; padding: 0; font-size: 13px; color: var(--text-3); counter-reset: s; }
+.w-steps li { counter-increment: s; display: flex; align-items: center; gap: 6px; }
+.w-steps li::before { content: counter(s); width: 20px; height: 20px; border-radius: 99px; display: inline-grid; place-items: center; font-size: 11.5px; font-weight: 650; background: var(--surface-3); color: var(--text-2); }
+.w-steps li.on { color: var(--text); font-weight: 600; } .w-steps li.on::before { background: #3f8e86; color: #fff; }
+.w-steps li.done::before { content: "✓"; background: color-mix(in srgb, #8fcaae 45%, transparent); color: #1f5b55; }
+.w-field { display: flex; flex-direction: column; gap: 5px; font-size: 13.5px; font-weight: 550; color: var(--text-2); }
+.w-field em { font-style: normal; font-weight: 400; color: var(--text-3); }
+.w-field input, .login.welcome .w-field input { padding: 10px 12px; font-weight: 400; color: var(--text); text-align: left; }
+.w-field small { font-weight: 400; color: var(--text-3); font-size: 12.5px; }
+.w-field small.err, .login.welcome .err { color: var(--danger); }
+.w-form { display: flex; flex-direction: column; gap: 12px; }
+.w-choices { display: grid; gap: 10px; }
+.w-choices button { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left; white-space: normal; padding: 14px 16px; border-radius: 14px; border: 1.5px solid var(--border); background: var(--surface); box-shadow: none; }
+.w-choices button b { font-size: 15.5px; } .w-choices button small { color: var(--text-2); font-size: 13px; line-height: 1.4; }
+.w-choices button.on { border-color: #3f8e86; background: color-mix(in srgb, #8fcaae 16%, var(--surface)); box-shadow: 0 0 0 3px color-mix(in srgb, #8fcaae 30%, transparent); }
+.w-choices.compact { grid-template-columns: 1fr 1fr; } .w-choices.compact button { padding: 10px 12px; align-items: center; }
+.w-note { font-size: 13px; color: var(--text-3); margin: 0; }
+.w-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 4px; }
+.w-actions .primary { flex: 1; }
+.login.welcome > button.primary { margin-top: 4px; }
+:root[data-theme="dark"] .w-steps li.done::before { color: #b8e6d6; }
+:root[data-theme="dark"] .w-choices button.on { border-color: #5fb3a8; }
+.modal.account { width: min(480px, calc(100vw - 24px)); max-height: 86vh; overflow: auto; }
+.acc-sec { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--border-soft); }
+.acc-sec h3 { margin: 0; font-size: 14px; font-weight: 650; }
+.acc-row { display: flex; gap: 8px; } .acc-row input { flex: 1; min-width: 0; }
+.acc-pw { display: flex; flex-direction: column; gap: 8px; } .acc-pw input { padding: 9px 11px; }
+.acc-link { align-self: flex-start; padding-left: 0; padding-right: 0; }
+.acc-members { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.acc-members small { color: var(--text-3); }
+.acc-note { font-size: 13px; margin: 0; }
+.acc-about { flex-direction: row; align-items: center; gap: 12px; }
+.acc-about > div { display: flex; flex-direction: column; gap: 2px; } .acc-about small { color: var(--text-2); font-size: 13px; }
+@media (max-width: 860px) { .w-field input, .acc-pw input, .acc-row input { font-size: 16px; } }
+.w-cmd { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--code-bg); color: var(--code-fg); font: 13px/1.5 var(--font-code); white-space: pre-wrap; word-break: break-all; }

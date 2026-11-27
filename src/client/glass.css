@@ -1,0 +1,281 @@
+/* Liquid Glass, after Apple's material (WWDC25 "Meet Liquid Glass"). Only the controls layer that floats over
+   content gets it: the phone tab bar and nav buttons, sheets and menus, toasts, Spotlight and the keyboard toolbar.
+   Content (pages, rows, the sidebar, Jeff's panel) stays plain, and glass never sits on glass.
+
+   What makes it Liquid Glass rather than frosted glass:
+   - Lensing: the edge bends what's behind it. Chromium gets real refraction (glass.ts puts an SVG displacement map
+     in --lg-lens); Safari can't filter a backdrop through SVG, so there the bezel is drawn with light alone.
+   - Small controls are nearly clear (light blur, the content stays readable through them). Big surfaces (sheets,
+     menus) scatter more and carry more tint, so text on them stays legible.
+   - Specular highlights: a bright rim where light catches the top edge, a darker refracting rim below, an inner
+     glow for thickness, and a hot spot that leans toward the pointer on desktop.
+   - It lights up from within where you press, flexes, and settles with a little spring.
+   - Shadows deepen when content scrolls underneath; content dissolves softly under the tab bar.
+   - Sheets and menus materialize (the lensing ramps up) instead of fading.
+   Turn it off in Settings > Liquid Glass. Reduce Transparency makes it frostier, Increase Contrast makes it solid
+   with a border, Reduce Motion removes the flex and spring. */
+
+@property --lg-lit { syntax: "<number>"; inherits: false; initial-value: 0; }
+
+:root {
+  /* --lg-a, --lg-a-big, --lg-blur, --lg-blur-big come from the Clear-to-Tinted slider (glass.ts). */
+  --lg-tint: rgba(255, 255, 255, var(--lg-a, .52));
+  --lg-tint-big: rgba(252, 252, 252, var(--lg-a-big, .78));
+  --lg-blur: 7.5px;
+  --lg-blur-big: 25px;
+  --lg-spec: rgba(255, 255, 255, .95);          /* rim catching the light */
+  --lg-spec-lo: rgba(255, 255, 255, .38);
+  --lg-hair: rgba(0, 0, 0, .07);                /* the glass's outline against light content */
+  --lg-inner-hi: rgba(255, 255, 255, .75);      /* thickness: light gathered under the top edge */
+  --lg-inner-lo: rgba(0, 0, 0, .09);            /* refraction darkening along the bottom edge */
+  --lg-hot: rgba(255, 255, 255, .42);           /* specular hot spot */
+  --lg-glow: rgba(255, 255, 255, .55);          /* touch light */
+  --lg-shadow: 0 8px 24px rgba(15, 15, 15, .10), 0 1px 4px rgba(15, 15, 15, .06);
+  --lg-shadow-deep: 0 12px 32px rgba(15, 15, 15, .17), 0 2px 8px rgba(15, 15, 15, .09);
+  --lg-spring: cubic-bezier(.34, 1.56, .64, 1);
+}
+:root[data-theme="dark"] {
+  --lg-tint: rgba(40, 40, 42, var(--lg-a, .52));
+  --lg-tint-big: rgba(36, 36, 38, var(--lg-a-big, .78));
+  --lg-spec: rgba(255, 255, 255, .42);
+  --lg-spec-lo: rgba(255, 255, 255, .10);
+  --lg-hair: rgba(255, 255, 255, .10);
+  --lg-inner-hi: rgba(255, 255, 255, .16);
+  --lg-inner-lo: rgba(0, 0, 0, .35);
+  --lg-hot: rgba(255, 255, 255, .14);
+  --lg-glow: rgba(255, 255, 255, .20);
+  --lg-shadow: 0 8px 26px rgba(0, 0, 0, .38), 0 1px 4px rgba(0, 0, 0, .3);
+  --lg-shadow-deep: 0 14px 36px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .4);
+}
+
+/* ---------------------------------------------------------------- the material */
+:root:not([data-glass="off"]) :is(.tabbar .tb-pill, .tabbar .tb-search, .nav-back, .open-sb, .phone-tb, .toasts > div, .spot, .page > .topbar > .status,
+  .popover:not(:has(.popover, .fixed-pop)), .fixed-pop, .block-menu, .suggest-pop, .color-pop) {
+  --lg-t: var(--lg-tint);
+  --lg-b: var(--lg-blur);
+  --lg-sh: var(--lg-shadow);
+  background:
+    radial-gradient(circle at var(--lg-x, 50%) var(--lg-y, 50%), rgba(255, 255, 255, calc(var(--lg-lit) * .55)) 0, transparent 62%),
+    radial-gradient(120% 90% at var(--lg-hx, 22%) 0%, var(--lg-hot), transparent 46%),
+    var(--lg-t);
+  -webkit-backdrop-filter: blur(var(--lg-b)) saturate(1.9) brightness(1.06);
+  backdrop-filter: var(--lg-lens,) blur(var(--lg-b)) saturate(1.9) brightness(1.06);
+  border: 0;
+  box-shadow:
+    inset 1.2px 1.4px 0 -.4px var(--lg-spec),
+    inset -1px -1.2px 0 -.4px var(--lg-spec-lo),
+    inset 0 0 0 .6px var(--lg-hair),
+    inset 0 12px 16px -14px var(--lg-inner-hi),
+    inset 0 -12px 18px -14px var(--lg-inner-lo),
+    var(--lg-sh);
+  transition: --lg-lit .45s ease-out, box-shadow .3s ease, transform .5s var(--lg-spring), scale .5s var(--lg-spring);
+}
+/* Chromium: the lens filter (glass.ts) does the bending and the frost; the rest of the chain is color. */
+:root[data-glass="lens"] :is(.tabbar .tb-pill, .tabbar .tb-search, .nav-back, .open-sb, .phone-tb, .toasts > div, .spot, .page > .topbar > .status,
+  .popover:not(:has(.popover, .fixed-pop)), .fixed-pop, .block-menu, .suggest-pop, .color-pop) {
+  backdrop-filter: var(--lg-lens, blur(var(--lg-b))) saturate(1.9) brightness(1.06);
+}
+
+/* Touch: light blooms from under the finger at once, then fades. */
+:root:not([data-glass="off"]) .lg-lit { --lg-lit: 1; transition: --lg-lit .08s ease-out, box-shadow .3s ease, transform .5s var(--lg-spring), scale .5s var(--lg-spring); }
+
+/* Big surfaces scatter more light and carry more tint (legibility), with deeper shadows. (Doubled classes: :is() takes
+   its most specific argument, so the rule above, which lists .page > .topbar > .status, would otherwise win.) */
+:root:not([data-glass="off"]) :is(.spot.spot.spot, .popover.popover:not(:has(.popover, .fixed-pop)), .fixed-pop.fixed-pop.fixed-pop, .block-menu.block-menu.block-menu, .suggest-pop.suggest-pop.suggest-pop, .color-pop.color-pop.color-pop) {
+  --lg-t: var(--lg-tint-big);
+  --lg-b: var(--lg-blur-big);
+  --lg-sh: var(--lg-shadow-deep);
+}
+:root:not([data-glass="off"]) .toasts > div { --lg-t: var(--lg-tint-big); --lg-b: 16px; color: var(--text); border-radius: 999px; padding: 10px 18px; font-weight: 500; }
+
+/* Materialize: menus and sheets grow in on a spring (on Chromium the lensing also ramps up from flat). */
+@keyframes lg-in { from { scale: .92; opacity: .2; } 60% { opacity: 1; } to { scale: 1; opacity: 1; } }
+:root:not([data-glass="off"]) :is(.popover, .fixed-pop, .block-menu, .suggest-pop, .color-pop) { animation: lg-in .38s var(--lg-spring) both; transform-origin: 50% 0; }
+:root:not([data-glass="off"]) .toasts > div { animation: lg-in .42s var(--lg-spring) both; }
+
+/* ---------------------------------------------------------------- phone: floating tab bar, nav buttons, sheets */
+.tb-pill { display: contents; }
+.tb-sel { display: none; }
+@media (max-width: 599px) {
+  /* Content runs under the floating bar (so the glass has something to bend) and dissolves softly beneath it. */
+  :root:not([data-glass="off"]) .main { padding-bottom: 0 !important; }
+  :root:not([data-glass="off"]) .scroll::after { content: ""; display: block; height: calc(92px + env(safe-area-inset-bottom)); }
+  :root:not([data-glass="off"]) .home { padding-bottom: calc(110px + env(safe-area-inset-bottom)); }
+  :root:not([data-glass="off"]) .app::after { content: ""; position: fixed; left: 0; right: 0; bottom: 0; height: calc(96px + env(safe-area-inset-bottom)); z-index: 55; pointer-events: none;
+    background: linear-gradient(to top, color-mix(in srgb, var(--bg) 78%, transparent) 0%, color-mix(in srgb, var(--bg) 45%, transparent) 50%, transparent); }
+  :root:not([data-glass="off"]) body:has(.popover, .fixed-pop, .block-menu, .suggest-pop, .modal-back, .spot-back, .phone-tb) .app::after { display: none; }
+
+  /* The tab bar: a capsule holding Home, Jeff and New, and Search in its own circle (iOS 26), floating above the
+     home indicator, concentric with the screen's corners. */
+  :root:not([data-glass="off"]) .tabbar { left: max(14px, env(safe-area-inset-left)); right: max(14px, env(safe-area-inset-right)); bottom: max(10px, calc(env(safe-area-inset-bottom) - 12px));
+    height: 62px; padding: 0; gap: 10px; background: transparent; border: 0; -webkit-backdrop-filter: none; backdrop-filter: none; align-items: stretch; }
+  :root:not([data-glass="off"]) .tabbar .tb-pill { display: flex; position: relative; flex: 1; border-radius: 31px; padding: 4px; isolation: isolate; }
+  :root:not([data-glass="off"]) .tabbar .tb-search { position: relative; flex: 0 0 62px; width: 62px; height: 62px; border-radius: 50%; display: grid; place-items: center; }
+  :root:not([data-glass="off"]) .tabbar .tb-search span { display: none; }
+  :root:not([data-glass="off"]) .tabbar .tb-pill :is(a, button) { position: relative; z-index: 1; height: 54px; border-radius: 27px; color: var(--text); font-size: 10.5px; font-weight: 600; gap: 2px; }
+  :root:not([data-glass="off"]) .tabbar .tb-pill .on { color: var(--accent); }
+  :root:not([data-glass="off"]) .tabbar .tb-search { color: var(--text); }
+  /* The selected tab sits in a drop of clearer glass that slides (and stretches) between tabs. */
+  :root:not([data-glass="off"]) .tabbar .tb-sel { display: block; position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 4px; width: calc((100% - 8px) / 4); border-radius: 27px;
+    background: color-mix(in srgb, var(--text) 9%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .6), inset 0 -1px 0 rgba(0, 0, 0, .05);
+    transform: translateX(calc(var(--i, 0) * 100%)); transition: transform .55s var(--lg-spring), opacity .2s; }
+  :root:not([data-glass="off"]) .tabbar .tb-sel[hidden] { opacity: 0; }
+  :root[data-theme="dark"]:not([data-glass="off"]) .tabbar .tb-sel { background: rgba(255, 255, 255, .13); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18); }
+  /* Press: flex, then spring back. */
+  :root:not([data-glass="off"]) :is(.tabbar .tb-pill, .tabbar .tb-search, .nav-back, .open-sb):active { scale: .955; transition: scale .12s ease-out, --lg-lit .08s ease-out; }
+  /* Adaptive shadow: deeper while content passes underneath. */
+  :root:not([data-glass="off"]):not([data-lg-end]) .tabbar :is(.tb-pill, .tb-search) { --lg-sh: var(--lg-shadow-deep); }
+  :root:not([data-glass="off"])[data-lg-top] :is(.nav-back, .open-sb) { --lg-sh: var(--lg-shadow-deep); }
+  :root:not([data-glass="off"]) .toasts { bottom: calc(86px + env(safe-area-inset-bottom)); }
+
+  /* Back / menu: glass circles in the navigation bar. */
+  :root:not([data-glass="off"]) :is(.nav-back, .open-sb) { width: 40px; height: 40px; top: calc(env(safe-area-inset-top) + 2px); left: calc(env(safe-area-inset-left) + 6px); border-radius: 50%; color: var(--text); }
+
+  /* Sheets: inset from the screen edges with corners concentric to it. */
+  :root:not([data-glass="off"]) :is(.popover, .fixed-pop, .block-menu) { border-radius: 30px !important; left: 10px !important; right: 10px !important; padding: 14px 8px 10px; transform-origin: 50% 100%; }
+  :root:not([data-glass="off"]) :is(.popover, .fixed-pop, .block-menu) :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) { background: color-mix(in srgb, var(--bg) 55%, transparent); }
+
+  /* The keyboard toolbar floats as a capsule just above the keyboard. */
+  :root:not([data-glass="off"]) .phone-tb { left: 8px; right: 8px; height: 46px; border-radius: 23px; margin-top: -6px; overflow: hidden; }
+  :root:not([data-glass="off"]) .phone-tb button { background: transparent; }
+}
+
+/* Bottom sheets (under 860px) are nearly solid, so every sheet reads the same: a menu over a colourful cover looked
+   tinted and smeared while the same sheet over a plain panel looked white. Small controls keep the clear glass. */
+@media (max-width: 859px) {
+  :root:not([data-glass="off"]) :is(.popover.popover.popover:not(:has(.popover, .fixed-pop)), .fixed-pop.fixed-pop.fixed-pop.fixed-pop, .block-menu.block-menu.block-menu.block-menu) { --lg-t: rgba(252, 252, 252, .97); --lg-lens: initial !important; }
+  :root[data-theme="dark"]:not([data-glass="off"]) :is(.popover.popover.popover:not(:has(.popover, .fixed-pop)), .fixed-pop.fixed-pop.fixed-pop.fixed-pop, .block-menu.block-menu.block-menu.block-menu) { --lg-t: rgba(36, 36, 38, .97); }
+}
+
+/* On larger screens the menu button sits in the page's top bar: no glass there. */
+@media (min-width: 600px) {
+  :root:not([data-glass="off"]) .nav-back, :root:not([data-glass="off"]) .app:not(.collapsed) .open-sb { background: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (min-width: 600px) and (max-width: 859px) { :root:not([data-glass="off"]) .open-sb { background: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; } }
+
+/* ---------------------------------------------------------------- accessibility */
+@media (prefers-reduced-transparency: reduce) {
+  :root:not([data-glass="off"]) { --lg-tint: rgba(250, 250, 250, .9); --lg-tint-big: rgba(250, 250, 250, .95); --lg-blur: 30px; --lg-blur-big: 40px; }
+  :root[data-theme="dark"]:not([data-glass="off"]) { --lg-tint: rgba(38, 38, 40, .92); --lg-tint-big: rgba(36, 36, 38, .96); }
+  :root:not([data-glass="off"]) * { --lg-lens: initial !important; }
+}
+@media (prefers-contrast: more) {
+  :root:not([data-glass="off"]) :is(.tabbar .tb-pill, .tabbar .tb-search, .nav-back, .open-sb, .phone-tb, .toasts > div, .spot, .popover, .fixed-pop, .block-menu, .suggest-pop, .color-pop) {
+    background: var(--surface) !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+    box-shadow: 0 0 0 1.5px var(--text), var(--shadow-lg) !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-glass="off"]) * { animation-duration: .01ms !important; }
+  :root:not([data-glass="off"]) :is(.tabbar .tb-pill, .tabbar .tb-search, .nav-back, .open-sb):active { scale: 1; }
+  :root:not([data-glass="off"]) .tabbar .tb-sel { transition: none; }
+}
+
+/* Settings: the Clear-to-Tinted slider (like iOS 27's). */
+.glass-level { display: flex; flex-direction: column; gap: 2px; padding: 4px 10px 8px; }
+.glass-level input[type="range"] { -webkit-appearance: auto; appearance: auto; width: 100%; height: 22px; padding: 0; margin: 0; border: 0; background: transparent; box-shadow: none; accent-color: var(--accent); }
+.glass-level span { display: flex; justify-content: space-between; color: var(--text-3); font-size: 12px; }
+@media (max-width: 599px) { .glass-level input[type="range"] { height: 36px; } .glass-level span { font-size: 14px; } }
+
+/* ---------------------------------------------------------------- desktop (macOS Tahoe-style) */
+/* The page toolbar as glass capsules with the page (and its cover) scrolling underneath (soft scroll edge), and Jeff's
+   floating window in glass. These elements contain menus, and a menu
+   inside a backdrop-filtered element could only see that element's own content, so here the glass is drawn on a
+   ::before layer behind the element's children instead of on the element itself. */
+@media (min-width: 860px) {
+
+  :root:not([data-glass="off"]) .agent.floating { --lg-b: var(--lg-blur-big); }
+  :root:not([data-glass="off"]) .page > .topbar :is(.crumbs, .actions) { --lg-b: var(--lg-blur); }
+
+  /* Page toolbar: content scrolls underneath; crumbs and actions float in glass capsules. */
+  :root:not([data-glass="off"]) .page > .topbar { position: absolute; top: 0; left: 0; right: 0; z-index: 6; pointer-events: none; background: transparent; padding-top: 6px; padding-bottom: 6px; height: calc(var(--topbar-h) + 12px); min-height: 0; isolation: isolate; }
+  :root:not([data-glass="off"]) .page > .topbar::before { content: ""; position: absolute; inset: 0 0 -18px 0; z-index: -1; pointer-events: none;
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--bg) 70%, transparent), transparent);
+    -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px);
+    -webkit-mask-image: linear-gradient(to bottom, #000 35%, transparent); mask-image: linear-gradient(to bottom, #000 35%, transparent); }
+  :root:not([data-glass="off"]) .page > .scroll { padding-top: calc(var(--topbar-h) + 12px); }
+  /* A cover runs right up under the floating toolbar, so the glass has colour to bend. */
+  :root:not([data-glass="off"]) .page > .scroll:has(> .cover:first-child) { padding-top: 0; }
+  /* The soft scroll edge only appears once content is actually scrolling under the toolbar. */
+  :root:not([data-glass="off"]) .page > .topbar::before { opacity: 0; transition: opacity .25s ease; }
+  :root:not([data-glass="off"])[data-lg-top] .page > .topbar::before { opacity: 1; }
+  :root:not([data-glass="off"]) .page > .topbar .crumbs { flex: 0 1 auto; margin-right: auto; height: 34px; padding: 0 8px; border-radius: 17px; position: relative; isolation: isolate; }
+  :root:not([data-glass="off"]) .page > .topbar .actions { height: 34px; padding: 0 4px 0 10px; border-radius: 17px; position: relative; isolation: isolate; }
+  :root:not([data-glass="off"]) .page > .topbar .actions:empty { display: none; }
+  /* With the sidebar open it already shows where you are, so the page-name capsule goes; it returns when the
+     sidebar is collapsed. (Not in the side peek, which has its own header.) */
+  :root:not([data-glass="off"]) .app:not(.collapsed) > .main > .page > .topbar { justify-content: flex-end; }
+  :root:not([data-glass="off"]) .app:not(.collapsed) > .main > .page > .topbar .crumbs { display: none; }
+  :root:not([data-glass="off"]) .page > .topbar > * { pointer-events: auto; }
+  /* A banner (e.g. "Changed elsewhere") sits below the floating toolbar, not under it. */
+  :root:not([data-glass="off"]) .page > .banner { margin-top: calc(var(--topbar-h) + 12px); position: relative; z-index: 5; }
+  :root:not([data-glass="off"]) .page > .banner ~ .scroll { padding-top: 0; }
+  /* "Edited just now" floats in its own small glass pill (it has no menus, so it is glass itself). */
+  :root:not([data-glass="off"]) .page > .topbar > .status { --lg-sh: 0 1px 3px rgba(15, 15, 15, .08); height: 26px; padding: 0 10px; border-radius: 13px; font-size: 12px; color: var(--text); font-weight: 500; }
+  @media (min-width: 0) { :root:not([data-glass="off"]) .page > .topbar > .status:empty { display: none; } }
+  :root:not([data-glass="off"]) .page > .topbar .actions .icon-btn, :root:not([data-glass="off"]) .page > .topbar .actions > button { border-radius: 14px; }
+
+  /* Jeff's floating window */
+  :root:not([data-glass="off"]) .agent.floating { background: transparent; isolation: isolate; }
+  :root:not([data-glass="off"]) .agent.floating :is(.ag-compose, .ag-head) { background: transparent; border-color: transparent; }
+
+  /* The glass layer itself */
+  :root:not([data-glass="off"]) :is(.page > .topbar .crumbs, .page > .topbar .actions, .agent.floating)::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; }
+  :root:not([data-glass="off"]) .page > .topbar :is(.crumbs, .actions) { --lg-shadow: 0 1px 3px rgba(15, 15, 15, .08); }
+  :root:not([data-glass="off"]) .page > .topbar :is(.crumbs, .actions)::before {
+    background: radial-gradient(120% 90% at var(--lg-hx, 22%) 0%, var(--lg-hot), transparent 46%), var(--lg-tint);
+    -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(1.9) brightness(1.06);
+    backdrop-filter: blur(var(--lg-blur)) saturate(1.9) brightness(1.06);
+    box-shadow:
+      inset 1.2px 1.4px 0 -.4px var(--lg-spec), inset -1px -1.2px 0 -.4px var(--lg-spec-lo), inset 0 0 0 .6px var(--lg-hair),
+      inset 0 12px 16px -14px var(--lg-inner-hi), inset 0 -12px 18px -14px var(--lg-inner-lo), var(--lg-shadow);
+  }
+  /* Big panels scatter more and carry more tint. */
+  /* Jeff's window: a full glass pane. */
+  :root:not([data-glass="off"]) .agent.floating::before {
+    background: radial-gradient(120% 60% at var(--lg-hx, 22%) 0%, var(--lg-hot), transparent 40%), var(--lg-tint-big);
+    -webkit-backdrop-filter: blur(var(--lg-blur-big)) saturate(1.9) brightness(1.04);
+    backdrop-filter: blur(var(--lg-blur-big)) saturate(1.9) brightness(1.04);
+    box-shadow:
+      inset 1.2px 1.4px 0 -.4px var(--lg-spec), inset -1px -1.2px 0 -.4px var(--lg-spec-lo), inset 0 0 0 .6px var(--lg-hair),
+      inset 0 16px 22px -18px var(--lg-inner-hi), var(--lg-shadow-deep);
+  }
+  :root[data-glass="lens"] .page > .topbar :is(.crumbs, .actions)::before { backdrop-filter: var(--lg-lens, blur(var(--lg-blur))) saturate(1.9) brightness(1.06); }
+  :root[data-glass="lens"] .agent.floating::before { backdrop-filter: var(--lg-lens, blur(var(--lg-blur-big))) saturate(1.9) brightness(1.04); }
+  /* The menu button when the sidebar is collapsed: a glass circle. */
+  :root:not([data-glass="off"]) .app.collapsed .open-sb { width: 34px; height: 34px; top: 7px; left: 10px; border-radius: 50%; z-index: 7;
+    background: radial-gradient(120% 90% at 22% 0%, var(--lg-hot), transparent 46%), var(--lg-tint);
+    -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(1.9); backdrop-filter: blur(var(--lg-blur)) saturate(1.9);
+    box-shadow: inset 1.2px 1.4px 0 -.4px var(--lg-spec), inset 0 0 0 .6px var(--lg-hair), var(--lg-shadow); }
+}
+@media (prefers-contrast: more) {
+  :root:not([data-glass="off"]) :is(.page > .topbar .crumbs, .page > .topbar .actions, .agent.floating)::before { background: var(--surface) !important; backdrop-filter: none !important; box-shadow: 0 0 0 1.5px var(--text) !important; }
+}
+
+/* ---------------------------------------------------------------- sidebar: solid, with the selected item in glass */
+/* The sidebar itself stays solid. Only the selected item (Home, My tasks, Jeff, the open page) sits in a drop of
+   glass: a raised, glossy lens with a bright top rim and a soft shadow, like the selected tab on iOS. It's drawn
+   with light alone (no backdrop filter), since rows can hold menus and the sidebar behind it is a flat colour. */
+:root:not([data-glass="off"]) .sidebar :is(.sb-btn.active, .row.active) {
+  background:
+    radial-gradient(120% 140% at var(--lg-hx, 30%) -20%, rgba(255, 255, 255, .9), transparent 60%),
+    linear-gradient(to bottom, rgba(255, 255, 255, .78), rgba(255, 255, 255, .5));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .95),
+    inset 0 -1px 0 rgba(0, 0, 0, .04),
+    inset 0 0 0 .5px rgba(0, 0, 0, .07),
+    0 1px 2px rgba(15, 15, 15, .07), 0 3px 10px rgba(15, 15, 15, .06);
+  color: var(--text);
+}
+:root[data-theme="dark"]:not([data-glass="off"]) .sidebar :is(.sb-btn.active, .row.active) {
+  background:
+    radial-gradient(120% 140% at var(--lg-hx, 30%) -20%, rgba(255, 255, 255, .16), transparent 60%),
+    linear-gradient(to bottom, rgba(255, 255, 255, .12), rgba(255, 255, 255, .05));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .22), inset 0 -1px 0 rgba(0, 0, 0, .3), inset 0 0 0 .5px rgba(255, 255, 255, .08),
+    0 1px 2px rgba(0, 0, 0, .4), 0 3px 10px rgba(0, 0, 0, .25);
+}
+@media (prefers-contrast: more) {
+  :root:not([data-glass="off"]) .sidebar :is(.sb-btn.active, .row.active) { background: var(--active); box-shadow: inset 0 0 0 1.5px var(--text); }
+}

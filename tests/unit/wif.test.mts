@@ -1,0 +1,28 @@
+import { mintIdentityToken, publicJwks, openidConfiguration, authMode, wifMissing } from "../../src/worker/claude-auth.ts";
+// Uses a throwaway key generated here; never a real one.
+const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+const jwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
+const key = JSON.stringify({ kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y, d: jwk.d, kid: "test-key" });
+const env: any = { WIF_SIGNING_KEY: key, PUBLIC_URL: "https://seaglass.example.workers.dev", ANTHROPIC_FEDERATION_RULE_ID: "fdrl_x", ANTHROPIC_ORGANIZATION_ID: "00000000-0000-0000-0000-000000000000", ANTHROPIC_SERVICE_ACCOUNT_ID: "svac_x" };
+let ok = 0, bad = 0; const t = (n: string, c: boolean, x: unknown = "") => { c ? ok++ : (bad++, console.log("FAIL", n, x)); if (c) console.log("PASS", n); };
+const dec = (s: string) => JSON.parse(Buffer.from(s, "base64url").toString());
+t("mode is wif when everything is set", authMode(env) === "wif");
+t("mode falls back to api key when WIF incomplete", authMode({ ...env, ANTHROPIC_FEDERATION_RULE_ID: undefined, ANTHROPIC_API_KEY: "sk" }) === "api_key" && wifMissing({ ...env, ANTHROPIC_FEDERATION_RULE_ID: undefined }).join() === "ANTHROPIC_FEDERATION_RULE_ID");
+const cfg = openidConfiguration(env);
+t("discovery: issuer + jwks_uri under /wif", cfg.issuer === "https://seaglass.example.workers.dev/wif" && cfg.jwks_uri === "https://seaglass.example.workers.dev/wif/jwks.json", cfg);
+const jwks = await publicJwks(env);
+t("JWKS publishes no private part", jwks.keys.length === 1 && !("d" in jwks.keys[0]) && jwks.keys[0].alg === "ES256");
+const jwt = await mintIdentityToken(env); const [h, p, sig] = jwt.split(".");
+const header = dec(h), claims = dec(p);
+t("header: ES256 + kid matching the JWKS", header.alg === "ES256" && header.kid === jwks.keys[0].kid, header);
+t("claims: iss/sub/aud", claims.iss === cfg.issuer && claims.sub === "seaglass" && claims.aud === "https://api.anthropic.com", claims);
+t("lifetime within Anthropic's 1h max", claims.exp - claims.iat === 300 && claims.iat <= Date.now() / 1000 + 1);
+const pub = await crypto.subtle.importKey("jwk", jwks.keys[0], { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+t("signature verifies against the published key", await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, pub, Buffer.from(sig, "base64url"), new TextEncoder().encode(`${h}.${p}`)));
+const tampered = `${h}.${Buffer.from(JSON.stringify({ ...claims, sub: "attacker" })).toString("base64url")}`;
+t("tampered claims fail verification", !(await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, pub, Buffer.from(sig, "base64url"), new TextEncoder().encode(tampered))));
+const jwt2 = await mintIdentityToken(env);
+t("fresh jti every token (no replay rejections)", dec(jwt2.split(".")[1]).jti !== claims.jti);
+const rotated = { ...env, WIF_SIGNING_KEY: JSON.stringify([JSON.parse(key), { ...JSON.parse(key), kid: "old-key" }]) };
+t("rotation: array publishes both keys, first signs", (await publicJwks(rotated)).keys.length === 2 && dec((await mintIdentityToken(rotated)).split(".")[0]).kid === JSON.parse(key).kid);
+console.log(`\n${ok} passed, ${bad} failed`);

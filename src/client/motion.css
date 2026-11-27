@@ -1,0 +1,59 @@
+/* Motion and touch gestures (phones and tablets). Springs instead of fades; everything that can be dismissed can
+   be swiped away and follows the finger (gestures.ts, components/Gestures.tsx, useSheet in ui.tsx). Reduce Motion
+   turns the movement off. */
+:root { --spring: cubic-bezier(.32, .72, 0, 1); --spring-bounce: cubic-bezier(.34, 1.4, .64, 1); }
+
+/* ---- page changes on phones slide like a navigation stack (View Transitions; Safari 18+, Chrome) */
+@media (max-width: 599px) {
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .42s; animation-timing-function: var(--spring); }
+  html[data-nav="forward"]::view-transition-new(root) { animation-name: vt-in-from-right; }
+  html[data-nav="forward"]::view-transition-old(root) { animation-name: vt-out-to-left; }
+  html[data-nav="back"]::view-transition-new(root) { animation-name: vt-in-from-left; }
+  html[data-nav="back"]::view-transition-old(root) { animation-name: vt-out-to-right; z-index: 1; }
+  /* Floating controls stay put while the page moves underneath. */
+  .tabbar { view-transition-name: sg-tabbar; }
+  .nav-back { view-transition-name: sg-back; }
+  .app.route-home .open-sb { view-transition-name: sg-menu; }
+  ::view-transition-group(sg-tabbar), ::view-transition-group(sg-back), ::view-transition-group(sg-menu) { animation-duration: .25s; }
+}
+@keyframes vt-in-from-right { from { transform: translateX(100%); } }
+@keyframes vt-out-to-left { to { transform: translateX(-28%); opacity: .7; } }
+@keyframes vt-in-from-left { from { transform: translateX(-28%); opacity: .7; } }
+@keyframes vt-out-to-right { to { transform: translateX(100%); } }
+
+/* ---- springier entrances */
+@media (max-width: 859px) {
+  .sidebar { animation: drawer .42s var(--spring); }
+  .scrim { animation: fade .3s ease; }
+  .agent { animation: sg-rise .44s var(--spring); }
+  .modal-back:has(.modal.memory, .modal.notify) .modal { animation: sg-rise .44s var(--spring); }
+}
+@media (max-width: 599px) { .peek { animation: sg-push .42s var(--spring); } }
+@keyframes sg-rise { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes sg-push { from { transform: translateX(100%); } to { transform: none; } }
+:root[data-glass="off"] :is(.popover, .fixed-pop, .block-menu) { animation-timing-function: var(--spring); animation-duration: .36s; }
+
+/* ---- swipeable task rows: green "Done" on the left, red "Trash" on the right, revealed as the row slides */
+.task-wrap { position: relative; }
+.task-act { display: none; position: absolute; inset: 0; align-items: center; justify-content: space-between; padding: 0 18px; font-size: 15px; font-weight: 600; color: #fff; border-radius: inherit; }
+.task-act span { display: inline-flex; align-items: center; gap: 6px; opacity: calc(.35 + var(--sw, 0) * .65); transform: scale(calc(.85 + var(--sw, 0) * .15)); }
+.task-wrap.swiping .task-act { display: flex; }
+.task-wrap.swiping > .task { position: relative; z-index: 1; background: var(--bg); touch-action: pan-y; }
+.task-wrap.compact.swiping > .task { background: var(--surface); }
+.task-wrap.sw-right .task-act { background: #2e9e6a; } .task-wrap.sw-right .ta-del { visibility: hidden; }
+.task-wrap.sw-left .task-act { background: #e5484d; justify-content: flex-end; } .task-wrap.sw-left .ta-done { display: none; }
+
+/* ---- tab bar: the selection drop follows your finger and stretches while you slide */
+.tabbar .tb-sel.dragging { transition: none !important; scale: 1.12 1.06; opacity: 1 !important; }
+
+/* ---- touch feedback: rows and buttons settle back with a little spring */
+@media (hover: none) {
+  :is(.sidebar .row, .task, .upcoming a, .sb-btn):active { transition: background-color .08s; }
+  .tabbar :is(a, button) { transition: transform .45s var(--spring-bounce); }
+  .tabbar :is(a, button):active { transform: scale(.9); transition-duration: .1s; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
+  .sidebar, .scrim, .agent, .peek, .modal { animation: none !important; }
+}

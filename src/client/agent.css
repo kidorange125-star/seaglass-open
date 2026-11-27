@@ -1,0 +1,163 @@
+/* ============================================================
+   Jeff's chat, modelled on Notion AI's panel (floating card or docked sidebar).
+   Loaded after notion.css.
+   ============================================================ */
+.agent { display: flex; flex-direction: column; z-index: 45; color: var(--text); }
+.agent.floating { position: fixed; top: auto; right: 16px; bottom: 16px; left: auto; width: 420px; height: min(680px, calc(100vh - 32px)); border-radius: 16px; border: 0; background: var(--surface); box-shadow: var(--shadow-modal); overflow: hidden; animation: agent-in .18s var(--ease); }
+.agent.docked { position: fixed; top: 0; right: 0; bottom: 0; width: 400px; border-radius: 0; border-left: 1px solid var(--border); background: var(--bg); box-shadow: none; animation: none; }
+@keyframes agent-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
+.app.has-agent:has(.agent.floating) .main { margin-right: 0; }
+.app:has(.agent) .jeff-fab { display: none; }
+
+/* Header */
+.ag-head { height: 46px; padding: 0 8px 0 10px; gap: 2px; border-bottom: 0; flex: none; }
+.ag-chat-title { max-width: 210px; height: 30px; padding: 0 8px; gap: 4px; box-shadow: none; font-size: 14px; font-weight: 500; color: var(--text); justify-content: flex-start; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: inline-flex; }
+.ag-caret { display: inline-flex; color: var(--icon-2); transform: rotate(90deg); flex: none; }
+.ag-head { position: relative; }
+.ag-head-jeff { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: none; display: grid; animation: fade .2s; }
+.ag-head.has-jeff .ag-title-wrap { max-width: calc(50% - 34px); min-width: 0; }
+.ag-head.has-jeff .ag-chat-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; min-width: 0; }
+.ag-head .icon-btn { color: var(--icon); } .ag-head .icon-btn:hover { color: var(--icon-strong); }
+.ag-model { margin-right: 4px; font-size: 12px; padding: 1px 8px; border-radius: 10px; background: var(--surface-3); color: var(--text-2); font-weight: 500; }
+.ag-history { left: 0; right: auto; width: 300px; max-height: 420px; overflow-y: auto; }
+.ag-hist-row { display: flex; align-items: center; border-radius: var(--r); }
+.ag-hist-row:hover, .ag-hist-row.on { background: var(--surface-3); }
+.ag-hist-row > button:first-child { flex: 1; min-width: 0; height: 32px; justify-content: space-between; box-shadow: none; padding: 0 8px; font-weight: 400; gap: 8px; background: transparent; }
+.ag-hist-row .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-hist-row small { color: var(--text-3); flex: none; font-size: 12px; }
+.ag-hist-row .icon-btn { opacity: 0; width: 26px; height: 26px; } .ag-hist-row:hover .icon-btn { opacity: 1; }
+
+/* Empty state: avatar, question, grouped suggestions */
+.ag-scroll { padding: 8px 18px 16px; gap: 16px; }
+.ag-empty { align-items: flex-start; text-align: left; padding: 22px 6px 8px; gap: 10px; color: var(--text); }
+.ag-avatar { width: 52px; height: 52px; border-radius: 50%; background: #fff; box-shadow: rgba(15, 15, 15, .08) 0 0 0 1px, rgba(15, 15, 15, .08) 0 2px 6px; display: grid; place-items: center; overflow: hidden; }
+.ag-avatar { width: 56px; height: 56px; align-items: start; }
+.ag-avatar .jeff { margin-top: 3px; filter: none !important; }
+.ag-empty > b { font-size: 18px; font-weight: 600; margin: 6px 0 4px; }
+.ag-chips { gap: 10px; width: 100%; margin-top: 0; }
+.ag-chip-group { display: flex; flex-direction: column; gap: 0; }
+.ag-chip-head { font-size: 12px; color: var(--text-3); font-weight: 500; padding: 4px 8px; }
+.ag-chips button { height: 32px; padding: 0 8px; gap: 10px; font-size: 14px; color: var(--text); border-radius: var(--r); }
+.ag-chips button svg.c-blue { color: var(--c-blue); }
+.ag-chips button svg.c-purple { color: var(--c-purple); }
+.ag-chips button svg.c-green { color: var(--c-green); }
+.ag-chips button svg.c-orange { color: var(--c-orange); }
+.ag-chips button svg.c-yellow { color: var(--c-yellow); }
+
+/* Conversation */
+.ag-msg.user { justify-content: flex-end; }
+.ag-bubble { max-width: 85%; background: var(--bg-gray); color: var(--text); border-radius: 14px; padding: 7px 12px; box-shadow: none; font-size: 14.5px; line-height: 1.5; }
+:root[data-theme="dark"] .ag-bubble { background: var(--active); }
+.ag-msg.assistant { display: block; }
+.ag-reply { gap: 6px; }
+.ag-md { font-size: 14.5px; line-height: 1.6; }
+.ag-tools { gap: 0; padding-left: 2px; border-left: 2px solid var(--border); margin-left: 4px; }
+.ag-tool { background: transparent !important; border: 0; box-shadow: none; padding: 2px 8px; height: auto; min-height: 26px; font-size: 13px; color: var(--text-2); border-radius: var(--r); gap: 8px; }
+.ag-tool:not(:disabled):hover { background: var(--surface-3) !important; color: var(--text); }
+.ag-tool svg, .ag-tool.ok svg { color: var(--icon); }
+.ag-tool.error, .ag-tool.error svg { color: var(--danger); }
+.ag-thinking { font-size: 14px; width: fit-content; color: transparent; background: linear-gradient(90deg, var(--text-3) 30%, var(--text) 50%, var(--text-3) 70%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; animation: ag-shimmer 1.4s linear infinite; }
+.ag-thinking::after { content: "\2026"; }
+@keyframes ag-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.ag-actions { display: flex; gap: 0; margin-left: -6px; }
+.ag-actions .icon-btn { width: 26px; height: 26px; color: var(--icon-2); } .ag-actions .icon-btn:hover { color: var(--icon-strong); }
+.ag-foot { justify-content: flex-start; gap: 10px; padding: 0; font-size: 12px; }
+.ag-foot button { height: 24px; padding: 0 8px; font-size: 12px; box-shadow: var(--shadow-sm); }
+.ag-sys { background: transparent; border: 0; font-size: 12.5px; color: var(--text-3); padding: 0; }
+.ag-error { font-size: 13.5px; }
+
+/* Composer */
+.ag-compose { position: relative; border-top: 0; padding: 0 12px 12px; background: transparent; gap: 0; flex: none; }
+.agent.docked .ag-compose { background: var(--bg); }
+.ag-box { flex-direction: column; align-items: stretch; gap: 2px; padding: 8px 10px; border-radius: 14px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border-strong), rgba(15, 15, 15, .04) 0 2px 6px; }
+.ag-box:focus-within { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--accent-soft); }
+.ag-ctxrow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ag-at { width: 26px; height: 24px; padding: 0; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--text-2); font-weight: 500; font-size: 13px; }
+.ag-ctx-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 240px; height: 24px; padding: 0 4px 0 8px; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--border-strong); font-size: 13px; color: var(--text); }
+.ag-ctx-chip .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-ctx-chip button { width: 18px; height: 18px; padding: 0; border-radius: 50%; box-shadow: none; color: var(--icon-2); flex: none; }
+.ag-at-pop { left: 0; right: auto; top: auto; bottom: calc(100% + 6px); width: 280px; }
+.ag-at-pop .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-box textarea { padding: 6px 2px 4px; font-size: 14.5px; max-height: 180px; }
+.ag-boxfoot { display: flex; align-items: center; justify-content: space-between; }
+.ag-hint { font-size: 12px; color: var(--text-3); padding: 0 2px; }
+.ag-box .send { width: 28px; height: 28px; border-radius: 50%; padding: 0; background: var(--text); color: var(--bg); box-shadow: none; display: grid; place-items: center; }
+.ag-box .send:disabled { background: var(--active); color: var(--text-3); }
+.ag-box .send.stop { background: var(--text); color: var(--bg); }
+.ag-cmds { position: absolute; left: 12px; bottom: calc(100% + 2px); display: flex; gap: 4px; padding: 4px; background: var(--surface); border-radius: 10px; box-shadow: var(--shadow-lg); }
+.ag-cmds button { height: 26px; font-size: 12.5px; box-shadow: none; font-family: var(--font-code); }
+
+@media (max-width: 859px) {
+  .agent.floating, .agent.docked { inset: 0; width: 100%; height: 100%; border-radius: 0; z-index: 80; }
+  .ag-dock { display: none; }
+}
+
+/* Notion Agent-style avatar: head clipped to the circle, duck allowed to break out of the top. */
+.jeff-avatar { position: relative; display: inline-block; flex: none; margin-top: 14px; }
+.jeff-avatar-clip { position: absolute; inset: 0; border-radius: 50%; overflow: hidden; background: #fff; box-shadow: rgba(15, 15, 15, .08) 0 0 0 1px, rgba(15, 15, 15, .08) 0 2px 6px; }
+.jeff-avatar-clip img { position: absolute; left: 50%; top: 22%; height: 92%; transform: translateX(-50%); }
+.jeff-avatar-duck { position: absolute; left: 50%; top: -16%; height: 44%; transform: translateX(-46%); filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .08)); }
+/* The floating button is the avatar itself: head in the circle, duck breaking out of the top. */
+.jeff-fab { background: transparent !important; box-shadow: none !important; width: 48px; height: 52px; }
+.jeff-fab .jeff-avatar { margin-top: 10px; }
+.jeff-fab .jeff-avatar-clip { box-shadow: rgba(15, 15, 15, .1) 0 0 0 1px, rgba(15, 15, 15, .14) 0 4px 12px; }
+.jeff-fab:hover .jeff-avatar-duck { transform: translateX(-46%) rotate(-6deg); transition: transform .2s var(--ease); }
+.jeff-face { filter: none !important; }
+/* Avatar v2: face features centred in the circle; the duck rests on the rim. */
+.jeff-avatar-clip img { top: 20%; height: 64%; left: 50%; transform: translateX(-46%); }
+.jeff-avatar-duck { top: -22%; height: 40%; transform: translateX(-42%); }
+.jeff-fab:hover .jeff-avatar-duck { transform: translateX(-42%) rotate(-6deg); }
+
+/* Avatar v3: the whole head sits inside the circle (about 75% of its height, starting 12% down); only the duck,
+   which is the top quarter of jeff-small.png, rises above the rim. */
+.jeff-avatar-bg { position: absolute; inset: 0; border-radius: 50%; background: #fff; box-shadow: rgba(15, 15, 15, .08) 0 0 0 1px, rgba(15, 15, 15, .08) 0 2px 6px; }
+.jeff-fab .jeff-avatar-bg { box-shadow: rgba(15, 15, 15, .1) 0 0 0 1px, rgba(15, 15, 15, .14) 0 4px 12px; }
+.jeff-avatar-art { position: absolute; left: 50%; top: -11.5%; height: 98%; width: auto; transform: translateX(-50%); }
+.jeff-fab:hover .jeff-avatar-art { transform: translateX(-50%) rotate(-3deg); transition: transform .2s var(--ease); }
+
+/* Avatar v4 (bust). jeff-bust.png: duck in the top 12.5% of its height, head from 11.5% to 48.5%, body below.
+   The image is 1.135x the circle tall and starts 7% above it, so the head sits at the top of the circle,
+   the body runs off the bottom edge, and the duck strip (the top 12.5%) is the only part drawn outside. */
+.jeff-avatar { position: relative; display: inline-block; flex: none; }
+.jeff-avatar-clip { position: absolute; inset: 0; border-radius: 50%; overflow: hidden; background: #fff; box-shadow: rgba(15, 15, 15, .08) 0 0 0 1px, rgba(15, 15, 15, .08) 0 2px 6px; }
+.jeff-fab .jeff-avatar-clip { box-shadow: rgba(15, 15, 15, .1) 0 0 0 1px, rgba(15, 15, 15, .14) 0 4px 12px; }
+.jeff-avatar-clip img, .jeff-avatar-duck-strip img { position: absolute; left: 50%; transform: translateX(-50%); height: calc(var(--s) * 1.135); width: auto; max-width: none; }
+.jeff-avatar-clip img { top: calc(var(--s) * -0.07); }
+.jeff-avatar-duck-strip { position: absolute; left: -20%; right: -20%; top: calc(var(--s) * -0.07); height: calc(var(--s) * 1.135 * 0.125); overflow: hidden; pointer-events: none; }
+.jeff-avatar-duck-strip img { top: 0; }
+.jeff-avatar-bg, .jeff-avatar-art { display: none; }
+.jeff-fab:hover .jeff-avatar-duck-strip img { transform: translateX(-50%) rotate(-3deg); transform-origin: 50% 100%; transition: transform .2s var(--ease); }
+
+/* Avatar v5: face where it was in v3 (head from 12% to ~86% of the circle), with just the top of the body showing
+   under it at the bottom edge. jeff-bust.png has the head at 11.5%-48.5% of its height, so it is drawn at 2.014x the
+   circle and starts 11.2% above it; the duck strip is its top 12.5%. */
+.jeff-avatar-clip img, .jeff-avatar-duck-strip img { height: calc(var(--s) * 2.014); }
+.jeff-avatar-clip img { top: calc(var(--s) * -0.112); }
+.jeff-avatar-duck-strip { top: calc(var(--s) * -0.112); height: calc(var(--s) * 2.014 * 0.125); }
+
+/* One-tap actions above the composer: a single scrolling row of chips. */
+.ag-quick { display: flex; gap: 6px; overflow-x: auto; padding: 8px 0 8px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.ag-quick::-webkit-scrollbar { display: none; }
+.ag-quick button { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: 15px; font-size: 13px; font-weight: 500; color: var(--text); background: var(--surface); box-shadow: inset 0 0 0 1px var(--border-strong); white-space: nowrap; }
+.ag-quick button:hover:not(:disabled) { background: var(--hover); }
+.ag-quick button:disabled { opacity: .5; }
+.ag-quick svg.c-blue { color: var(--c-blue); } .ag-quick svg.c-purple { color: var(--c-purple); } .ag-quick svg.c-green { color: var(--c-green); }
+.ag-quick svg.c-orange { color: var(--c-orange); } .ag-quick svg.c-yellow { color: var(--c-yellow); }
+.ag-bubble.action { font-weight: 500; }
+
+/* Model menu in the composer's footer. */
+.ag-boxfoot .ag-hint { margin-right: auto; margin-left: 6px; }
+.ag-modelbtn { display: inline-flex; align-items: center; gap: 3px; height: 24px; padding: 0 6px; border-radius: 6px; font-size: 12.5px; font-weight: 500; color: var(--text-2); box-shadow: none; background: transparent; }
+.ag-modelbtn:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+.ag-modelbtn:disabled { cursor: default; }
+.ag-model-pop { left: 0; right: auto; top: auto; bottom: calc(100% + 6px); width: 250px; }
+.ag-model-pop button { height: auto; min-height: 44px; padding: 6px 8px; align-items: center; }
+.ag-model-pop .t { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; flex: 1; font-size: 14px; font-weight: 500; }
+.ag-model-pop small { font-size: 12px; font-weight: 400; color: var(--text-3); }
+.ag-check { color: var(--accent); font-size: 14px; }
+@media (hover: none) {
+  .ag-boxfoot .ag-hint { visibility: hidden; }
+  .ag-quick button { height: 36px; padding: 0 14px; font-size: 15px; border-radius: 18px; }
+  .ag-modelbtn { height: 32px; font-size: 14px; }
+}
+.ag-modelbtn svg { transform: rotate(90deg); color: var(--icon-2); }

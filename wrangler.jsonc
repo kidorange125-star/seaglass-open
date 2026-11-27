@@ -1,0 +1,47 @@
+// Seaglass on Cloudflare Workers. Step-by-step setup: docs/SETUP.md
+{
+  "name": "seaglass",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist/client",
+    "not_found_handling": "single-page-application",
+    // These paths are handled by the Worker; everything else is the app's static files.
+    "run_worker_first": ["/api/*", "/files/*", "/p/*", "/mcp", "/mcp/*", "/authorize", "/authorize/*", "/oauth/*", "/.well-known/*", "/wif/*"]
+  },
+  "observability": { "enabled": true },
+  // Every minute: task notifications (and, at 04:17 UTC, cleanup of expired OAuth tokens and grants in KV).
+  "triggers": { "crons": ["* * * * *"] },
+
+  // 1) npx wrangler d1 create seaglass            -> paste the database_id
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "seaglass",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Workers AI: voice note transcription (Whisper) and search by meaning (embeddings). Billed by Cloudflare per use.
+  "ai": { "binding": "AI" },
+  // 2) npx wrangler r2 bucket create seaglass-files
+  "r2_buckets": [
+    { "binding": "FILES", "bucket_name": "seaglass-files" }
+  ],
+  // 3) npx wrangler kv namespace create OAUTH_KV   -> paste the id
+  "kv_namespaces": [
+    { "binding": "OAUTH_KV" }
+  ],
+
+  // Non-secret settings. Secrets (API_TOKEN, WIF_SIGNING_KEY, VAPID_PRIVATE_KEY, optional ANTHROPIC_API_KEY) are set with
+  // `npx wrangler secret put NAME`, never here. Empty values mean "not set".
+  "vars": {
+    // Your Worker's public address, no trailing slash, e.g. https://seaglass-notes.yourname.workers.dev
+    "PUBLIC_URL": "",
+    // Claude Console -> Settings -> Workload identity (see docs/SETUP.md, part 4)
+    "ANTHROPIC_FEDERATION_RULE_ID": "",
+    "ANTHROPIC_ORGANIZATION_ID": "",
+    "ANTHROPIC_SERVICE_ACCOUNT_ID": "",
+    "ANTHROPIC_WORKSPACE_ID": ""
+  }
+}
