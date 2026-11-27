@@ -6,6 +6,7 @@ import type { Env } from "./env";
 import * as Vault from "./vault";
 import { authMode } from "./claude-auth";
 import { ownerOf } from "./scope";
+import * as Usage from "./usage";
 
 /** Whose uploaded file this is. Files from before people had their own things carry no owner: the first account's. */
 export async function fileOwner(env: Env, obj: { customMetadata?: Record<string, string> }) {
@@ -54,6 +55,7 @@ export async function textOf(env: Env, f: PageFile): Promise<string> {
     const plain = await Vault.openBytes("files", key, "body", new Uint8Array(await obj.arrayBuffer()));
     if (!env.AI) throw new Error("Reading PDFs needs Workers AI, which isn't set up.");
     const r = await env.AI.toMarkdown({ name: f.name.endsWith(".pdf") ? f.name : `${f.name}.pdf`, blob: new Blob([plain as BlobPart], { type: "application/pdf" }) });
+    await Usage.record(env.DB, "read a PDF", "toMarkdown");
     if (r.format === "error") throw new Error(`Couldn't read ${f.name}: ${r.error}`);
     text = r.data.trim();
     if (!text) text = `(${f.name} has no text in it: it may be scanned pictures of pages.)`;

@@ -52,6 +52,11 @@ not hidden in the interface. (Whoever holds `DATA_KEY` can still read the whole 
 - Upgrading from 0.1: 0023 gives every existing row to the first account (tested by running 0.1, making data, then
   migrating and signing in). A 0.1 backup restored into 0.2 does the same (`scripts/backup-sql.mjs` `beforeOwners`).
 - Removed members: their things leave the live database at once, and the nightly backups (kept 14 days) age them out.
+- 0.2.1: AI usage per person (`usage.ts`, migration 0025 `ai_usage`, recorded at every model call: the agent loop,
+  `ai.ts` `complete`, Whisper, PDF reading and spoken replies; background search indexing isn't counted). Limits and
+  kid rules live in `person_rules`, a system table only owner routes write, and are checked before each call. Kid
+  accounts: teach mode in the agent's context, `/api/ai/write` and rewriting selections refused, no MCP (an outside
+  Claude never sees teach mode), no deleting themselves. Tested by `tests/api/usage.test.py`.
 - Later: the Vault owner backstop (a second check inside `Vault.open`), kid accounts, a shared Family space.
 
 ## In 0.2

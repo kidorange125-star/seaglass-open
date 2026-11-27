@@ -10,10 +10,11 @@ import {
 } from "./auth";
 import { household } from "./setup";
 import { PERSONAL, asPerson } from "./scope";
+import * as Usage from "./usage";
 
 const DAY = 86_400_000;
 const INVITE_DAYS = 7;
-const ROLES = new Set(["owner", "adult"]);
+const ROLES = new Set(["owner", "adult", "kid"]);
 // No 0/O, 1/I/L: a code read aloud or typed from a phone stays right. 12 of 32 symbols: 60 bits.
 const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
@@ -61,6 +62,7 @@ export async function removeMember(env: Env, id: string) {
   } catch (e) { console.error("couldn't revoke a removed member's apps", e); }
   await env.DB.batch([
     env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM person_rules WHERE person_id = ?").bind(id),
     env.DB.prepare("UPDATE invites SET used_by = NULL WHERE used_by = ?").bind(id),
     env.DB.prepare("DELETE FROM users WHERE id = ?").bind(id),
   ]);
@@ -126,7 +128,7 @@ export function registerHousehold(app: Hono<{ Bindings: Env }>) {
     const u = await owner(c); if (u instanceof Response) return u;
     if ((await household(c.env.DB)).mode !== "household") return c.json({ error: "Switch this Seaglass to a household first (above)." }, 400);
     const b = await body<{ role?: unknown; label?: unknown }>(c);
-    const role = b.role === "owner" ? "owner" : "adult";
+    const role = b.role === "owner" || b.role === "kid" ? b.role : "adult";
     const open = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM invites WHERE used_at IS NULL AND expires_at > ?").bind(Date.now()).first<{ n: number }>();
     if ((open?.n ?? 0) >= 20) return c.json({ error: "There are 20 invites waiting. Cancel some first." }, 400);
     const code = newCode(), now = Date.now();
@@ -148,7 +150,7 @@ export function registerHousehold(app: Hono<{ Bindings: Env }>) {
   app.patch("/api/household/members/:id", async (c) => {
     const u = await owner(c); if (u instanceof Response) return u;
     const role = (await body<{ role?: unknown }>(c)).role;
-    if (typeof role !== "string" || !ROLES.has(role)) return c.json({ error: "Pick owner or adult." }, 400);
+    if (typeof role !== "string" || !ROLES.has(role)) return c.json({ error: "Pick owner, adult or kid." }, 400);
     const id = c.req.param("id");
     const m = await c.env.DB.prepare("SELECT id, role FROM users WHERE id = ?").bind(id).first<{ id: string; role: string }>();
     if (!m) return c.json({ error: "not found" }, 404);
@@ -166,6 +168,8 @@ export function registerHousehold(app: Hono<{ Bindings: Env }>) {
     if (!u) return c.json({ error: "unauthorized" }, 401);
     const id = c.req.param("id");
     if (id !== u.id && u.role !== "owner") return c.json({ error: "Only the household's owner can do this." }, 403);
+    // A kid can't delete their own account (and everything in it); a parent can.
+    if (id === u.id && u.role === "kid") return c.json({ error: "Ask a parent (the household's owner) to do this." }, 403);
     const m = await c.env.DB.prepare("SELECT id, username, role FROM users WHERE id = ?").bind(id).first<{ id: string; username: string; role: string }>();
     if (!m) return c.json({ error: "not found" }, 404);
     // Typing their username is the confirmation: the server checks it too, so a stray request can't delete someone.
@@ -176,6 +180,36 @@ export function registerHousehold(app: Hono<{ Bindings: Env }>) {
     }
     await removeMember(c.env, id);
     return c.json({ ok: true, left: id === u.id });
+  });
+
+  // A forgotten password: an owner sets a new one for an adult or kid (never another owner), and their devices sign out.
+  app.post("/api/household/members/:id/password", async (c) => {
+    const u = await owner(c); if (u instanceof Response) return u;
+    const id = c.req.param("id");
+    const m = await c.env.DB.prepare("SELECT id, username, role FROM users WHERE id = ?").bind(id).first<{ id: string; username: string; role: string }>();
+    if (!m) return c.json({ error: "not found" }, 404);
+    if (m.role === "owner" || m.id === u.id) return c.json({ error: "Owners change their own password in their account settings." }, 403);
+    const password = (await body<{ password?: unknown }>(c)).password;
+    const err = passwordProblem(password, m.username); if (err) return c.json({ error: err, field: "password" }, 400);
+    const pw = await hashPassword(password as string);
+    await c.env.DB.batch([
+      c.env.DB.prepare("UPDATE users SET pass_hash = ?, pass_salt = ?, pass_iter = ?, password_changed_at = ? WHERE id = ?").bind(pw.hash, pw.salt, pw.iter, Date.now(), id),
+      c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(id),
+    ]);
+    return c.json({ ok: true });
+  });
+
+  app.get("/api/household/usage", async (c) => {
+    const u = await owner(c); if (u instanceof Response) return u;
+    return c.json(await Usage.household(c.env.DB));
+  });
+  // An owner sets someone's limits and rules; "household" is the whole household's monthly limit.
+  app.put("/api/household/rules/:id", async (c) => {
+    const u = await owner(c); if (u instanceof Response) return u;
+    const id = c.req.param("id") === "household" ? "" : c.req.param("id");
+    if (id && !(await c.env.DB.prepare("SELECT 1 FROM users WHERE id = ?").bind(id).first())) return c.json({ error: "not found" }, 404);
+    try { return c.json(await Usage.setRules(c.env.DB, id, await body<Record<string, unknown>>(c))); }
+    catch (e) { return c.json({ error: (e as Error).message }, 400); }
   });
 
   app.get("/api/household/members", async (c) => {

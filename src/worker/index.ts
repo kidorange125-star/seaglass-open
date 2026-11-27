@@ -33,6 +33,7 @@ import * as Pro from "./proactive";
 import * as Thread from "./thread";
 import { handleMcp } from "./mcp";
 import * as Files from "./files";
+import * as Usage from "./usage";
 import { registerHousehold, registerJoin } from "./household";
 import { asPerson, asSystem, ownerOf, people } from "./scope";
 import { agentCtx } from "./identity";
@@ -135,7 +136,7 @@ app.post("/api/voice/speak", async (c) => {
   const b = await body<{ text?: unknown }>(c);
   const text = typeof b.text === "string" ? b.text.trim() : "";
   if (!text || text.length > Voice.MAX_SPEAK_CHARS) return c.json({ error: "bad text" }, 400);
-  try { return await Voice.speak(c.env, text); }
+  try { const r = await Voice.speak(c.env, text); await Usage.record(c.env.DB, "voice (speaking)", Voice.voiceProvider(c.env) ?? "voice"); return r; }
   catch (e) {
     if (e instanceof Voice.VoiceError) return c.json({ error: e.message }, 502);
     console.error("voice failed");
@@ -193,8 +194,12 @@ const aiError = (c: { json: (o: unknown, s: 400 | 403 | 503) => Response }, e: u
   console.error("ai", e);
   return c.json({ error: /429|rate/i.test(msg) ? "Rate limited by the API. Try again in a moment." : `Claude hit an error: ${msg.slice(0, 160)}` }, 503);
 };
+// Teach mode (kid accounts): the assistant helps them learn, so it doesn't write or rewrite their work for them.
+const TEACH_REFUSAL = "On a kid account the assistant helps you learn instead of writing for you. Ask it to explain, give a hint, or check your work.";
+const KID_OFF = new Set(["improve", "longer", "shorter"]);
 app.post("/api/ai/selection", async (c) => {
   const b = await body<{ action?: unknown; html?: unknown; model?: unknown; page_id?: unknown }>(c);
+  if (KID_OFF.has(String(b.action)) && (await Usage.myRules(c.env.DB)).teach) return c.json({ error: TEACH_REFUSAL }, 403);
   if (typeof b.page_id === "string" && (await isHidden(c.env.DB, b.page_id))) return c.json({ error: HIDDEN_MSG }, 403);
   const html = String(b.html ?? "");
   if (!html.trim()) return c.json({ error: "nothing selected" }, 400);
@@ -202,6 +207,7 @@ app.post("/api/ai/selection", async (c) => {
   try { return c.json(await AI.rewriteSelection(c.env, String(b.action ?? ""), html, b.model)); } catch (e) { return aiError(c, e); }
 });
 app.post("/api/ai/write", async (c) => {
+  if ((await Usage.myRules(c.env.DB)).teach) return c.json({ error: TEACH_REFUSAL }, 403);
   const b = await body<{ instruction?: unknown; title?: unknown; before?: unknown; after?: unknown; model?: unknown; page_id?: unknown }>(c);
   if (typeof b.page_id === "string" && (await isHidden(c.env.DB, b.page_id))) return c.json({ error: HIDDEN_MSG }, 403);
   const instruction = String(b.instruction ?? "").slice(0, 2000), before = String(b.before ?? ""), after = String(b.after ?? "");
@@ -608,6 +614,9 @@ app.post("/api/routines/:id/run", async (c) => {
 app.get("/api/security/status", async (c) => c.json(await Seal.status(c.env)));
 app.post("/api/security/seal-all", async (c) => c.json(await Seal.sealNow(c.env)));
 
+// AI usage (usage.ts): your own, and for owners everyone's totals (numbers only) and the limits they set.
+app.get("/api/usage", async (c) => c.json(await Usage.mine(c.env.DB)));
+
 // One tiny real request to prove the Claude API credentials work (used by the setup check).
 app.post("/api/agent/test", async (c) => {
   const mode = authMode(c.env);
@@ -947,7 +956,9 @@ function providerFor(base: string) {
         if (!owner) return new Response("unauthorized", { status: 401 });
         // An app keeps working only while its account exists (removing a member also revokes their apps; this covers
         // a revoke that failed).
-        if (owner !== "dev" && !(await env.DB.prepare("SELECT 1 FROM users WHERE id = ?").bind(owner).first())) return new Response("unauthorized", { status: 401 });
+        const who = owner === "dev" ? { role: "owner" } : await env.DB.prepare("SELECT role FROM users WHERE id = ?").bind(owner).first<{ role: string }>();
+        if (!who) return new Response("unauthorized", { status: 401 });
+        if (who.role === "kid") return new Response("Kid accounts can't connect other apps.", { status: 403 });
         return handleMcp(request, asPerson(env, owner), ctx);
       },
     },

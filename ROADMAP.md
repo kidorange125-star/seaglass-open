@@ -9,10 +9,17 @@ What's planned for Seaglass Open, roughly in order. Nothing here exists yet unle
 - Test suites that sign in as two people and check that neither can reach the other's data through any route or tool.
 - Invite family members with a code or a link; owner and adult roles; removing someone (or leaving) deletes their things.
 
+## 0.2.1: kids and AI limits (done)
+
+- A QR code for invites, made on the device.
+- Kid accounts: the assistant teaches instead of doing homework, no web search and a small daily AI allowance unless
+  an owner changes them; kids can't connect outside apps or delete their own account. Owners can set a new password
+  for anyone who forgot theirs.
+- AI usage per person, feature and model (Settings > AI usage), with daily and monthly limits per person and a monthly
+  limit for the whole household, checked before every request.
+
 ## 0.2.x: households, continued
 
-- A QR code for invites; kid accounts (Waffle teaches rather than answers homework, a daily AI allowance, web search
-  only if a parent allows it).
 - A shared Family space for the calendar, groceries and chores; sharing a page or folder with a person (view, comment
   or edit).
 
@@ -22,8 +29,7 @@ What's planned for Seaglass Open, roughly in order. Nothing here exists yet unle
   address) that keeps each provider's own strengths instead of the lowest common denominator, and a table of what each model
   can do so features adapt.
 - Keys per household or per person, stored encrypted, never shown again after saving.
-- Usage by person, feature and model; monthly and daily caps that stop spending before it happens; detailed controls for
-  features, data, web access and automatic jobs.
+- Detailed controls for features, data, web access and automatic jobs (usage and spending limits arrived in 0.2.1).
 
 ## 0.4: setup and updates
 

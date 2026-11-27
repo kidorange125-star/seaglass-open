@@ -65,6 +65,7 @@ Start the server with `npm run dev`. The `.dev.vars` mode matters:
 | `python tests/api/hidden.test.py` | same as mcp | 35: Hide from AI: MCP and Waffle can't read, search, list, write, link to or undo hidden pages (or their sub-pages); mentions blanked; AI routes refuse; only the app can toggle it |
 | `python tests/api/households.test.py` | same as mcp, on an EMPTY database (no accounts); set `SEAGLASS_STATE` to the test server's `--persist-to` folder | 29: two people on one copy: B (an account added by SQL) sees none of A's things on any GET route or MCP tool, and naming A's ids changes nothing |
 | `python tests/api/invites.test.py` | `ANTHROPIC_API_KEY=mock`, `AUTH_OPEN=1`, no `SETUP_CODE`, on an EMPTY database; set `SEAGLASS_STATE` too | 36: two real accounts with sessions: invites (code, link, once only, cancel), joining, roles and their limits, separation of pages and files, removing a member deletes everything of theirs |
+| `python tests/api/usage.test.py` | same as invites | 32: AI usage recorded per person, feature and model; daily, monthly and household limits stop the next request; kid accounts (teach mode refuses writing and rewriting, no web, can't change their own rules or delete themselves); owners reset a forgotten password |
 
 Restart `npm run dev` after changing `.dev.vars`.
 

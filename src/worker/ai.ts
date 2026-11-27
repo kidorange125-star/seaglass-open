@@ -6,6 +6,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { Env } from "./env";
 import { authMode, claudeClient } from "./claude-auth";
 import { MODELS, pickModel, PAGE_FORMAT, ToolError } from "./agent";
+import * as Usage from "./usage";
 import * as N from "./notes";
 import { agentCtx } from "./identity";
 import { blankMentions, HIDDEN_SQL, HiddenError } from "./hidden";
@@ -142,13 +143,16 @@ type Content = string | Anthropic.Messages.ContentBlockParam[];
 export async function complete(env: Env, o: { kind: Kind; model?: unknown; system: string; content: Content; maxTokens?: number; effort?: "low" | "medium" }) {
   const mode = authMode(env);
   if (mode === "none") throw new ToolError("Waffle isn't connected to Claude yet (Settings, then Setup & status).");
-  if (mode === "mock") return MOCK[o.kind](typeof o.content === "string" ? o.content : JSON.stringify(o.content.filter((b) => b.type === "text")));
+  const over = await Usage.blocked(env.DB);
+  if (over) throw new ToolError(over);
+  if (mode === "mock") { await Usage.record(env.DB, o.kind, pickModel(o.model)); return MOCK[o.kind](typeof o.content === "string" ? o.content : JSON.stringify(o.content.filter((b) => b.type === "text"))); }
   const model = pickModel(o.model);
   const r = await claudeClient(env).messages.create({
     model, max_tokens: o.maxTokens ?? 4000, system: o.system,
     messages: [{ role: "user", content: o.content }],
     output_config: { effort: o.effort ?? "low" },
   } as Anthropic.Messages.MessageCreateParamsNonStreaming);
+  await Usage.record(env.DB, o.kind, model, { input: r.usage.input_tokens, output: r.usage.output_tokens, cache_read: r.usage.cache_read_input_tokens ?? 0, cache_write: r.usage.cache_creation_input_tokens ?? 0 });
   if (r.stop_reason === "refusal") throw new ToolError("Claude declined this request.");
   const text = r.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
   if (!text) throw new ToolError("Claude sent back an empty answer. Try again.");

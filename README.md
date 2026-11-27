@@ -27,11 +27,15 @@ This is **Seaglass Open**, the open-source edition, released under the [Apache L
   your account (username and password; just you or a household).
 - **A household, each person private**: invite family members with a code or a link (Settings > Account & household).
   Everyone gets their own account, and their pages, tasks, study, assistant and files are theirs alone: the server keeps
-  them apart, not just the screens. Owners invite, change roles and remove people; anyone can leave.
+  them apart, not just the screens. Owners invite (a code, a link or a QR code), change roles and remove people.
+- **Kid accounts**: the assistant teaches instead of doing homework, with no web search and a small daily AI allowance
+  unless a parent changes them.
+- **AI usage you can see and cap**: what each person and feature costs, with daily and monthly limits (Settings > AI
+  usage) that stop the next request, not the bill after it.
 
 ## What's not in it yet
 
-Seaglass Open is new (0.2). Kid accounts, a shared Family space and sharing pages with a person come next, then
+Seaglass Open is new (0.2). A shared Family space and sharing pages with a person come next, then
 bring-your-own keys for other AI providers, usage limits, importers and self-updating. See the [roadmap](ROADMAP.md).
 
 ## Run your own

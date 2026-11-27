@@ -4,6 +4,7 @@ import { HiddenError, hiddenIds, namesHidden, scrub, type HiddenSet } from "./hi
 import { systemFor } from "./persona";
 import { ownerName } from "./setup";
 import * as Approvals from "./approvals";
+import * as UsageLog from "./usage";
 import { agentLabel, modelName } from "./identity";
 import * as N from "./notes";
 import * as Sy from "./sync";
@@ -795,6 +796,9 @@ const QUICK_OFF = new Set(["remember", "forget", "search_past_chats", "ask_stron
 const ASK_STRONGER = { name: "ask_stronger_model", description: "Hand a job to a more powerful model that takes longer but thinks much harder. It has all the same tools and can see the recent conversation, and it reports back with a short result for you to say. Use it for anything you could get wrong by answering quickly.", input_schema: obj({ task: S("The whole job in plain words, including anything from the conversation it needs") }, ["task"]) };
 const DEEP: Record<string, { model: string; label: string; fast?: boolean }> = { sonnet: { model: "claude-sonnet-5-5", label: "Sonnet" }, opus: { model: "claude-opus-5-5", label: "Opus" }, "opus-fast": { model: "claude-opus-5-5", label: "Opus", fast: true } };
 
+/** Added for kid accounts (and anyone an owner turns teach mode on for): the assistant teaches instead of doing it. */
+const TEACH_NOTE = `\n<teach_mode>This person is a child using a kid account. Teach; don't do their schoolwork for them. Explain ideas, ask guiding questions, give hints and small worked examples of a DIFFERENT problem, and check their own answers and drafts, saying what's right and what to fix. Never write an essay, paragraph, answer or finished piece of homework for them to hand in, even if they ask, and never fill in a worksheet or quiz meant for school; offer to help them do it themselves instead. Organising their own notes, tasks and study is fine. Keep everything age-appropriate and kind.</teach_mode>`;
+
 export async function runAgent(env: Env, p: AgentParams, send: (e: AgentEvent) => void, isAborted: () => boolean) {
   const mode = authMode(env);
   if (mode === "none") throw new ToolError("no_key");
@@ -803,7 +807,13 @@ export async function runAgent(env: Env, p: AgentParams, send: (e: AgentEvent) =
   const PRICE = MODELS[model].price, SPEED_COST = p.fast ? 2 : 1;
   // The user can pick Waffle instead of Waffle in Settings: same assistant and tools, Waffle's name and its own few lines (persona.ts).
   const persona = (await env.DB.prepare("SELECT value FROM prefs WHERE owner_id = {owner} AND (key = 'persona')").first<{ value: string }>())?.value;
-  const call = mode === "mock" ? mockModel() : realModel(claudeClient(env), model, p.web !== false && !p.quick && (await Approvals.permissions(env.DB, Approvals.startingPoint(env))).web !== "never", systemFor(SYSTEM, persona), { voice: p.voice, fast: p.fast, quick: p.quick });
+  // Limits and rules an owner set for this person (usage.ts): checked before every model call below.
+  const rules = await UsageLog.myRules(env.DB);
+  const over = await UsageLog.blocked(env.DB);
+  if (over) throw new ToolError(over);
+  const web = rules.web && p.web !== false && !p.quick && (await Approvals.permissions(env.DB, Approvals.startingPoint(env))).web !== "never";
+  const feature = p.quick ? "quick action" : p.handoff ? "live voice (stronger model)" : p.voice ? "live voice" : p.via ? "routine" : p.study?.ids.length ? "study chat" : "assistant";
+  const call = mode === "mock" ? mockModel() : realModel(claudeClient(env), model, web, systemFor(SYSTEM, persona), { voice: p.voice, fast: p.fast, quick: p.quick });
   // Which agent this is, on every change it makes: "Waffle (Sonnet 5.5)", "Waffle (Haiku 5.5, live voice)"… (identity.ts)
   const agent = agentLabel(persona, [`${modelName(model)}${p.fast ? " Fast" : ""}`, p.via, p.voice && "live voice", p.handoff && "for live voice", p.quick && "Ctrl+K", !!p.study?.ids.length && "Study chat"]);
   const ctx: ToolCtx = { source: "agent", runId: p.run_id, agent, chatId: p.chat_id ?? null, threadBefore: p.thread_before ?? null, tz: p.tz };
@@ -817,6 +827,7 @@ export async function runAgent(env: Env, p: AgentParams, send: (e: AgentEvent) =
   if (who) context += ` You're talking with ${who.replace(/[<>\s]+/g, " ").trim()}.`;
   const perms = await Approvals.permissions(env.DB, Approvals.startingPoint(env));
   context += Approvals.permissionNote(perms);
+  if (rules.teach) context += TEACH_NOTE;
   if (p.page_id && UUID.test(p.page_id)) {
     const cur = await N.getNote(env.DB, p.page_id);
     if (cur && (await hiddenIds(env.DB)).has(cur.id)) context += " The user is viewing a page that's hidden from you (Hide from AI): you can't see or change it. If the user asks about it, tell them it's hidden from you.";
@@ -857,8 +868,10 @@ export async function runAgent(env: Env, p: AgentParams, send: (e: AgentEvent) =
   };
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     if (isAborted()) return;
+    if (turn > 0) { const stop = await UsageLog.blocked(env.DB); if (stop) { send({ type: "error", message: stop }); break; } }
     const reply = await call(messages, (t) => send({ type: "text", delta: t }), (name) => send({ type: "working", name }));
     const u = reply.usage;
+    await UsageLog.record(env.DB, feature, model, { input: u.input_tokens, output: u.output_tokens, cache_read: u.cache_read_input_tokens ?? 0, cache_write: u.cache_creation_input_tokens ?? 0 }, SPEED_COST);
     usage.input += u.input_tokens; usage.output += u.output_tokens;
     usage.cache_read += u.cache_read_input_tokens ?? 0; usage.cache_write += u.cache_creation_input_tokens ?? 0;
 

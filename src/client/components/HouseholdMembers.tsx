@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { api, type Account, type NewInvite, type PendingInvite } from "../api";
 import { useStore } from "../store";
+import { InviteQr } from "./InviteQr";
 
 const days = (t: number) => Math.max(1, Math.round((t - Date.now()) / 86_400_000));
-const ROLE_NAME: Record<string, string> = { owner: "Owner", adult: "Adult" };
+const ROLE_NAME: Record<string, string> = { owner: "Owner", adult: "Adult", kid: "Kid" };
+type Role = "owner" | "adult" | "kid";
 
 export function HouseholdMembers({ me, members, onMembers }: { me: Account; members: Account[]; onMembers: (m: Account[]) => void }) {
   const s = useStore();
@@ -13,7 +15,9 @@ export function HouseholdMembers({ me, members, onMembers }: { me: Account; memb
   const [invites, setInvites] = useState<PendingInvite[]>([]);
   const [fresh, setFresh] = useState<NewInvite | null>(null);
   const [label, setLabel] = useState("");
-  const [role, setRole] = useState<"adult" | "owner">("adult");
+  const [role, setRole] = useState<Role>("adult");
+  const [resetting, setResetting] = useState<Account | null>(null);
+  const [newPw, setNewPw] = useState("");
   const [removing, setRemoving] = useState<Account | null>(null);
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState("");
@@ -43,16 +47,34 @@ export function HouseholdMembers({ me, members, onMembers }: { me: Account; memb
             <span className="hh-who"><b>{m.display_name}{m.id === me.id ? " (you)" : ""}</b><small>{m.username}</small></span>
             {owner && m.id !== me.id ? (
               <select aria-label={`${m.display_name}'s role`} value={m.role} disabled={busy === `role${m.id}`}
-                onChange={(e) => { const r = e.target.value as "adult" | "owner"; void run(`role${m.id}`, async () => { await api.setRole(m.id, r); await reload(); }, `${m.display_name} is now ${r === "owner" ? "an owner" : "an adult"}`); }}>
-                <option value="owner">Owner</option><option value="adult">Adult</option>
+                onChange={(e) => { const r = e.target.value as Role; void run(`role${m.id}`, async () => { await api.setRole(m.id, r); await reload(); }, `${m.display_name} is now ${r === "owner" ? "an owner" : r === "kid" ? "a kid account" : "an adult"}`); }}>
+                <option value="owner">Owner</option><option value="adult">Adult</option><option value="kid">Kid</option>
               </select>
             ) : <small className="hh-role">{ROLE_NAME[m.role] ?? m.role}</small>}
-            {(owner ? m.id !== me.id : m.id === me.id) && (
+            {owner && m.id !== me.id && m.role !== "owner" && (
+              <button className="ghost hh-x" onClick={() => { setResetting(m); setNewPw(""); setRemoving(null); }} aria-label={`New password for ${m.display_name}`}>Password</button>
+            )}
+            {(owner ? m.id !== me.id : m.id === me.id && me.role !== "kid") && (
               <button className="ghost hh-x" onClick={() => { setRemoving(m); setConfirm(""); }}>{m.id === me.id ? "Leave" : "Remove"}</button>
             )}
           </li>
         ))}
       </ul>
+
+      {resetting && (
+        <form className="hh-remove hh-reset" aria-label={`New password for ${resetting.display_name}`} onSubmit={(e) => {
+          e.preventDefault();
+          void run("pw", async () => { await api.resetPassword(resetting.id, newPw); setResetting(null); }, `${resetting.display_name} has a new password. Their devices were signed out.`);
+        }}>
+          <b>New password for {resetting.display_name}</b>
+          <p>For when they've forgotten theirs. Tell them the new one; they can change it in their own settings.</p>
+          <input aria-label="New password" type="text" autoComplete="off" spellCheck={false} placeholder="10 characters or more" value={newPw} onChange={(e) => setNewPw(e.target.value)} />
+          <div className="hh-row">
+            <button type="button" className="ghost" onClick={() => setResetting(null)}>Cancel</button>
+            <button className="primary" disabled={busy === "pw" || newPw.length < 10}>Set password</button>
+          </div>
+        </form>
+      )}
 
       {removing && (
         <form className="hh-remove" role="alertdialog" aria-label={removing.id === me.id ? "Leave the household" : `Remove ${removing.display_name}`}
@@ -86,7 +108,8 @@ export function HouseholdMembers({ me, members, onMembers }: { me: Account; memb
             <div className="hh-code" aria-live="polite">
               <small>Their invite code</small>
               <code>{fresh.code}</code>
-              <small>Works once, for {days(fresh.expires_at)} days. It's only shown now: send it before you close this.</small>
+              <InviteQr link={fresh.link} />
+              <small>Scan it with their phone's camera, or send the code or link. Works once, for {days(fresh.expires_at)} days, and it's only shown now.</small>
               <div className="hh-row">
                 <button className="primary" onClick={() => share(fresh)}>{"share" in navigator ? "Send invite" : "Copy invite"}</button>
                 <button className="ghost" onClick={() => copy(fresh.link, "Link")}>Copy link</button>
@@ -99,8 +122,8 @@ export function HouseholdMembers({ me, members, onMembers }: { me: Account; memb
               void run("invite", async () => { setFresh(await api.invite(role, label.trim())); setInvites(await api.invites()); });
             }}>
               <input aria-label="Who it's for" placeholder="Who it's for (optional)" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={60} />
-              <select aria-label="Role" value={role} onChange={(e) => setRole(e.target.value as "adult" | "owner")}>
-                <option value="adult">Adult</option><option value="owner">Owner</option>
+              <select aria-label="Role" value={role} onChange={(e) => setRole(e.target.value as Role)}>
+                <option value="adult">Adult</option><option value="kid">Kid</option><option value="owner">Owner</option>
               </select>
               <button className="primary" disabled={busy === "invite"}>Make invite</button>
             </form>
@@ -115,7 +138,7 @@ export function HouseholdMembers({ me, members, onMembers }: { me: Account; memb
               ))}
             </ul>
           )}
-          <p className="muted acc-note">Owners can invite people, change roles, remove people and run backups. Everyone's notes, tasks, study and assistant stay their own.</p>
+          <p className="muted acc-note">Owners invite people, change roles, set AI limits and run backups. Kid accounts get an assistant that teaches instead of doing homework, no web search and a small daily AI allowance (change them in Settings &gt; AI usage). Everyone's notes, tasks, study and assistant stay their own.</p>
         </div>
       )}
     </div>

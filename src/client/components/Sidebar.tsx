@@ -3,8 +3,9 @@ import { useMemo, useRef, useState, type ReactElement } from "react";
 import { MovePicker } from "./MovePicker";
 import { EDITION } from "../edition";
 import { AccountDialog } from "./AccountDialog";
+import { UsageDialog } from "./UsageDialog";
 import { PermissionsDialog } from "./PermissionsDialog";
-import { IBell, ICalendar, ICheckSquare, IChevron, IChevronsUpDown, IDatabase, ICollapse, ICompose, ICopy, IDownload, IEyeOff, IHome, ILink, ILock, ILogout, IMore, IOpen, IPencil, IPlus, ISearch, ISettings, IShield, IStar, ITrash, IUpload, IStudy } from "../ui-icons";
+import { IBell, IChart, ICalendar, ICheckSquare, IChevron, IChevronsUpDown, IDatabase, ICollapse, ICompose, ICopy, IDownload, IEyeOff, IHome, ILink, ILock, ILogout, IMore, IOpen, IPencil, IPlus, ISearch, ISettings, IShield, IStar, ITrash, IUpload, IStudy } from "../ui-icons";
 import { api } from "../api";
 import { useStore } from "../store";
 import { JeffFace, Logo, PageIcon } from "../icons";
@@ -42,6 +43,7 @@ export function Sidebar() {
   const [setupOpen, setSetupOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [permsOpen, setPermsOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const toggle = (id: string, force?: boolean) => setOpen((o) => {
@@ -149,6 +151,7 @@ export function Sidebar() {
       <div className="mp-sep" />
       <button onClick={() => { setSettings(null); setAccountOpen(true); }}><ISettings size={S} /> Account & household</button>
       <button onClick={() => { setSettings(null); setPermsOpen(true); }}><IShield size={S} /> Assistant permissions</button>
+      <button onClick={() => { setSettings(null); setUsageOpen(true); }}><IChart size={S} /> AI usage</button>
       <button onClick={() => { setSettings(null); setSetupOpen(true); }}><IShield size={S} /> Setup & status</button>
       <button onClick={() => { setSettings(null); s.setMemoryOpen(true); }}><ICompose size={S} /> {agentName()}'s memory</button>
       <button onClick={() => { setSettings(null); s.setProactiveOpen(true); }}><IBell size={S} /> Routines & saved prompts</button>
@@ -234,6 +237,7 @@ export function Sidebar() {
       {setupOpen && createPortal(<SetupModal onClose={() => setSetupOpen(false)} />, document.body)}
       {accountOpen && createPortal(<AccountDialog onClose={() => setAccountOpen(false)} />, document.body)}
       {permsOpen && createPortal(<PermissionsDialog onClose={() => setPermsOpen(false)} />, document.body)}
+      {usageOpen && createPortal(<UsageDialog onClose={() => setUsageOpen(false)} />, document.body)}
     </aside>
   );
 }

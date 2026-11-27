@@ -83,6 +83,11 @@ export type AgentPermissions = Record<"add" | "edit" | "delete" | "memory" | "ro
 export interface Account { id: string; username: string; display_name: string; role: string }
 /** An invite still waiting to be used (its code is only shown once, when it's made). */
 export interface PendingInvite { id: string; role: string; label: string; created_at: number; expires_at: number }
+/** AI limits an owner sets for a person (or, as "household", for everyone together). null = no limit. */
+export interface Rules { daily_usd: number | null; monthly_usd: number | null; web: boolean; teach: boolean }
+export interface UsageLine { name: string; label?: string; calls: number; cost_usd: number }
+export interface MyUsage { date: string; today: number; month: number; household_month: number; by_feature: UsageLine[]; by_model: UsageLine[]; days: { day: string; cost_usd: number; calls: number }[]; rules: Rules }
+export interface HouseholdUsage { people: { id: string; name: string; username: string; role: string; today: number; month: number; calls: number; rules: Rules }[]; household: { month: number; rules: Rules } }
 export interface NewInvite { code: string; link: string; role: string; expires_at: number }
 export interface Household { mode: "individual" | "household"; name: string }
 export interface SessionInfo { authed: boolean; setup?: boolean; no_tables?: boolean; code_required?: boolean; code_set?: boolean; user?: Account | null; household?: Household }
@@ -134,9 +139,13 @@ export const api = {
   logout: () => call<{ ok: boolean }>("/api/logout", { method: "POST" }),
   members: () => call<Account[]>("/api/household/members"),
   invites: () => call<PendingInvite[]>("/api/household/invites"),
-  invite: (role: "adult" | "owner", label: string) => call<NewInvite>("/api/household/invites", { method: "POST", body: j({ role, label }) }),
+  invite: (role: "adult" | "owner" | "kid", label: string) => call<NewInvite>("/api/household/invites", { method: "POST", body: j({ role, label }) }),
   cancelInvite: (id: string) => call<{ ok: boolean }>(`/api/household/invites/${id}`, { method: "DELETE" }),
-  setRole: (id: string, role: "adult" | "owner") => call<{ ok: boolean }>(`/api/household/members/${id}`, { method: "PATCH", body: j({ role }) }),
+  setRole: (id: string, role: "adult" | "owner" | "kid") => call<{ ok: boolean }>(`/api/household/members/${id}`, { method: "PATCH", body: j({ role }) }),
+  resetPassword: (id: string, password: string) => call<{ ok: boolean }>(`/api/household/members/${id}/password`, { method: "POST", body: j({ password }) }),
+  usage: () => call<MyUsage>("/api/usage"),
+  householdUsage: () => call<HouseholdUsage>("/api/household/usage"),
+  setRules: (id: string, rules: Partial<Rules>) => call<Rules>(`/api/household/rules/${id}`, { method: "PUT", body: j(rules) }),
   removeMember: (id: string, confirm: string) => call<{ ok: boolean; left: boolean }>(`/api/household/members/${id}`, { method: "DELETE", body: j({ confirm }) }),
 
   tree: () => call<TreeNode[]>("/api/tree"),

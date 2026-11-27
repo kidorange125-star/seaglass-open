@@ -56,6 +56,7 @@ export const IUpload = (p: P) => <Svg {...p}><path d="M10 12.4V3.8M6.4 7.4 10 3.
 export const ILogout = (p: P) => <Svg {...p}><path d="M8.2 16.2H5.4c-.9 0-1.6-.7-1.6-1.6V5.4c0-.9.7-1.6 1.6-1.6h2.8M12.6 13.6 16.2 10l-3.6-3.6M16 10H8" /></Svg>;
 export const IBell = (p: P) => <Svg {...p}><path d="M5.6 13.6V9.2a4.4 4.4 0 0 1 8.8 0v4.4l1.3 1.6H4.3Z" /><path d="M8.4 16.6a1.7 1.7 0 0 0 3.2 0" /></Svg>;
 export const IShield = (p: P) => <Svg {...p}><path d="M10 3.4 4.6 5.3v4.3c0 3.3 2.3 5.7 5.4 7 3.1-1.3 5.4-3.7 5.4-7V5.3Z" /><path d="m7.6 10.1 1.7 1.7 3.2-3.4" /></Svg>;
+export const IChart = (p: P) => <Svg {...p}><path d="M4 15.6h12" /><path d="M6.4 13.2V9.6M10 13.2V5.4M13.6 13.2v-5" /></Svg>;
 export const ITemplate = (p: P) => <Svg {...p}><rect x="3.8" y="3.8" width="12.4" height="12.4" rx="1.8" /><path d="M3.8 7.9h12.4M8.4 7.9v8.3" /></Svg>;
 export const IClose = (p: P) => <Svg {...p}><path d="m5.4 5.4 9.2 9.2M14.6 5.4l-9.2 9.2" /></Svg>;
 export const IGlobe = (p: P) => <Svg {...p}><circle cx="10" cy="10" r="6.4" /><path d="M3.6 10h12.8M10 3.6c1.8 1.9 2.7 4 2.7 6.4s-.9 4.5-2.7 6.4c-1.8-1.9-2.7-4-2.7-6.4s.9-4.5 2.7-6.4Z" /></Svg>;

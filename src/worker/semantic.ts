@@ -2,6 +2,7 @@
 // and speech to text (Whisper); vectors live in D1 and are compared by brute-force cosine, which is plenty for one
 // person's notes. With ANTHROPIC_API_KEY=mock, embeddings are a cheap deterministic word hash (no AI calls) so the
 // test suites are repeatable and free.
+import * as Usage from "./usage";
 import * as Daily from "./daily";
 import * as Suggest from "./suggest";
 import { localNow } from "./reminders";
@@ -133,6 +134,7 @@ export async function transcribe(env: Env, audio: ArrayBuffer): Promise<string> 
   const u = new Uint8Array(audio);
   for (let i = 0; i < u.length; i += 0x8000) bin += String.fromCharCode(...u.subarray(i, i + 0x8000));
   const r = (await env.AI.run(WHISPER, { audio: btoa(bin) })) as { text?: string };
+  await Usage.record(env.DB, "voice to text", WHISPER);
   return String(r.text ?? "").trim();
 }
 
@@ -148,6 +150,7 @@ export async function hear(env: Env, audio: ArrayBuffer, lang?: string): Promise
   const u = new Uint8Array(audio);
   for (let i = 0; i < u.length; i += 0x8000) bin += String.fromCharCode(...u.subarray(i, i + 0x8000));
   const r = (await env.AI.run(WHISPER, { audio: btoa(bin), vad_filter: true, condition_on_previous_text: false, ...(lang ? { language: lang } : {}) } as never)) as HeardRaw;
+  await Usage.record(env.DB, "live listening", WHISPER);
   return heardFrom(r);
 }
 

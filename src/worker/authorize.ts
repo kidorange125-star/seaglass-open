@@ -130,6 +130,7 @@ export function registerAuthorize(app: Hono<{ Bindings: Env }>) {
     const restart = restartPath(form.get("restart"));
     const user = await currentUser(c.env, c.req.url, getCookie(c, COOKIE));
     if (!user) return errorPage("Your session expired.", restart);
+    if (user.role === "kid") return errorPage("Kid accounts can't connect other apps. Ask a parent.", restart);
     try {
       const oauth = c.env.OAUTH_PROVIDER;
       const handle = String(form.get("handle") ?? "");
