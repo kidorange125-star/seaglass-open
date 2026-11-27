@@ -62,8 +62,8 @@ export async function indexPending(env: Env, limit = 15): Promise<number> {
   if (!aiAvailable(env)) return 0;
   const db = env.DB;
   const rows = (await db.prepare(
-    `SELECT n.id, n.title, n.text, n.updated_at FROM notes n LEFT JOIN embeddings e ON e.note_id = n.id
-     WHERE n.deleted_at IS NULL AND n.is_template = 0 AND length(n.title) + length(n.text) > 8 AND (e.note_id IS NULL OR e.note_updated < n.updated_at) AND n.id NOT IN (${HIDDEN_SQL})
+    `SELECT n.id, n.title, n.text, n.updated_at FROM notes n LEFT JOIN embeddings e ON e.owner_id = {owner} AND e.note_id = n.id
+     WHERE n.owner_id = {owner} AND (n.deleted_at IS NULL AND n.is_template = 0 AND length(n.title) + length(n.text) > 8 AND (e.note_id IS NULL OR e.note_updated < n.updated_at) AND n.id NOT IN (${HIDDEN_SQL}))
      ORDER BY n.updated_at DESC LIMIT ?`,
   ).bind(limit).all<{ id: string; title: string; text: string; updated_at: number }>()).results;
   if (rows.length) {
@@ -72,10 +72,10 @@ export async function indexPending(env: Env, limit = 15): Promise<number> {
     const vecs = await embed(env, plain.map(embedText));
     const t = Date.now();
     const sealed = await Promise.all(rows.map(async (r, i) => toBuf(await Vault.sealBytes("embeddings", r.id, "vec", new Uint8Array(toBlob(vecs[i]))))));
-    await db.batch(rows.map((r, i) => db.prepare("INSERT OR REPLACE INTO embeddings (note_id, vec, note_updated, embedded_at) VALUES (?,?,?,?)").bind(r.id, sealed[i], r.updated_at, t)));
+    await db.batch(rows.map((r, i) => db.prepare("INSERT OR REPLACE INTO embeddings (owner_id, note_id, vec, note_updated, embedded_at) VALUES ({owner}, ?,?,?,?)").bind(r.id, sealed[i], r.updated_at, t)));
   }
   // Also drop vectors of pages hidden from AI (including ones moved under a hidden page since).
-  await db.prepare(`DELETE FROM embeddings WHERE note_id NOT IN (SELECT id FROM notes WHERE deleted_at IS NULL) OR note_id IN (${HIDDEN_SQL})`).run();
+  await db.prepare(`DELETE FROM embeddings WHERE owner_id = {owner} AND (note_id NOT IN (SELECT id FROM notes WHERE owner_id = {owner} AND (deleted_at IS NULL)) OR note_id IN (${HIDDEN_SQL}))`).run();
   return rows.length;
 }
 
@@ -86,12 +86,12 @@ export async function searchByMeaning(env: Env, query: string, limit = 6): Promi
   const db = env.DB;
   const [q] = await embed(env, [query.slice(0, 1000)]);
   const rows = (await db.prepare(
-    `SELECT e.note_id AS id, e.vec, n.title, n.icon, n.text FROM embeddings e JOIN notes n ON n.id = e.note_id WHERE n.deleted_at IS NULL LIMIT 6000`,
+    `SELECT e.note_id AS id, e.vec, n.title, n.icon, n.text FROM embeddings e JOIN notes n ON n.owner_id = {owner} AND n.id = e.note_id WHERE e.owner_id = {owner} AND (n.deleted_at IS NULL) LIMIT 6000`,
   ).all<{ id: string; vec: ArrayBuffer; title: string; icon: string | null; text: string }>()).results;
   const scored = (await Promise.all(rows.map(async (r) => { const v = fromBlob(await Vault.openBytes("embeddings", r.id, "vec", bytesOf(r.vec))); let s = 0; for (let i = 0; i < DIMS; i++) s += v[i] * q[i]; return { r, s }; })))
     .filter((x) => x.s > 0.2).sort((a, b) => b.s - a.s).slice(0, limit);
   const shown = await Promise.all(scored.map(async ({ r, s }) => ({ r: { ...r, title: (await Vault.open("notes", r.id, "title", r.title)) ?? "", icon: await Vault.open("notes", r.id, "icon", r.icon), text: (await Vault.open("notes", r.id, "text", r.text)) ?? "" }, s })));
-  const pending = (await db.prepare(`SELECT COUNT(*) AS n FROM notes n LEFT JOIN embeddings e ON e.note_id = n.id WHERE n.deleted_at IS NULL AND n.is_template = 0 AND length(n.title) + length(n.text) > 8 AND (e.note_id IS NULL OR e.note_updated < n.updated_at) AND n.id NOT IN (${HIDDEN_SQL})`).first<{ n: number }>())?.n ?? 0;
+  const pending = (await db.prepare(`SELECT COUNT(*) AS n FROM notes n LEFT JOIN embeddings e ON e.owner_id = {owner} AND e.note_id = n.id WHERE n.owner_id = {owner} AND (n.deleted_at IS NULL AND n.is_template = 0 AND length(n.title) + length(n.text) > 8 AND (e.note_id IS NULL OR e.note_updated < n.updated_at) AND n.id NOT IN (${HIDDEN_SQL}))`).first<{ n: number }>())?.n ?? 0;
   return {
     indexed: rows.length, pending,
     hits: shown.map(({ r, s }) => ({ id: r.id, title: r.title || "Untitled", icon: r.icon, score: Math.round(s * 1000) / 1000, snippet: r.text.replace(/\s+/g, " ").slice(0, 220) })),
@@ -108,14 +108,14 @@ export async function related(env: Env, id: string, text: string | null, limit =
     if (!aiAvailable(env)) return [];
     [q] = await embed(env, [text.slice(-1500)]);
   } else {
-    const own = await db.prepare("SELECT vec FROM embeddings WHERE note_id = ?").bind(id).first<{ vec: ArrayBuffer }>();
+    const own = await db.prepare("SELECT vec FROM embeddings WHERE owner_id = {owner} AND (note_id = ?)").bind(id).first<{ vec: ArrayBuffer }>();
     if (!own) return [];
     q = fromBlob(await Vault.openBytes("embeddings", id, "vec", bytesOf(own.vec)));
   }
   const min = authMode(env) === "mock" ? 0.3 : 0.62; // bge-small: unrelated notes sit around 0.4 to 0.55
   const rows = (await db.prepare(
-    `SELECT e.note_id AS id, e.vec, n.title, n.icon, n.text, n.parent_id, p.kind AS parent_kind FROM embeddings e JOIN notes n ON n.id = e.note_id
-     LEFT JOIN notes p ON p.id = n.parent_id WHERE n.deleted_at IS NULL AND n.id != ?1 AND (n.parent_id IS NULL OR n.parent_id != ?1) AND n.kind = 'page' AND (p.kind IS NULL OR p.kind != 'database') LIMIT 6000`,
+    `SELECT e.note_id AS id, e.vec, n.title, n.icon, n.text, n.parent_id, p.kind AS parent_kind FROM embeddings e JOIN notes n ON n.owner_id = {owner} AND n.id = e.note_id
+     LEFT JOIN notes p ON p.owner_id = {owner} AND p.id = n.parent_id WHERE e.owner_id = {owner} AND (n.deleted_at IS NULL AND n.id != ?1 AND (n.parent_id IS NULL OR n.parent_id != ?1) AND n.kind = 'page' AND (p.kind IS NULL OR p.kind != 'database')) LIMIT 6000`,
   ).bind(id).all<{ id: string; vec: ArrayBuffer; title: string; icon: string | null; text: string }>()).results;
   const scored = (await Promise.all(rows.map(async (r) => { const v = fromBlob(await Vault.openBytes("embeddings", r.id, "vec", bytesOf(r.vec))); let s = 0; for (let i = 0; i < DIMS; i++) s += v[i] * q![i]; return { r, s }; })))
     .filter((x) => x.s >= min).sort((a, b) => b.s - a.s).slice(0, limit);
@@ -156,8 +156,8 @@ export async function hear(env: Env, audio: ArrayBuffer, lang?: string): Promise
 // Seaglass without holding an account password. It can only add: a task or a line in the Inbox page.
 
 const sha256 = async (s: string) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
-const getPref = async (db: D1Database, k: string) => (await db.prepare("SELECT value FROM prefs WHERE key = ?").bind(k).first<{ value: string }>())?.value ?? null;
-const setPref = (db: D1Database, k: string, v: string) => db.prepare("INSERT INTO prefs (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(k, v).run();
+const getPref = async (db: D1Database, k: string) => (await db.prepare("SELECT value FROM prefs WHERE owner_id = {owner} AND (key = ?)").bind(k).first<{ value: string }>())?.value ?? null;
+const setPref = (db: D1Database, k: string, v: string) => db.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ({owner}, ?, ?) ON CONFLICT(owner_id, key) DO UPDATE SET value = excluded.value").bind(k, v).run();
 
 export async function makeCaptureToken(db: D1Database) {
   const raw = crypto.getRandomValues(new Uint8Array(24));
@@ -166,7 +166,13 @@ export async function makeCaptureToken(db: D1Database) {
   return token;
 }
 export const captureEnabled = async (db: D1Database) => !!(await getPref(db, "capture_token"));
-export const revokeCaptureToken = (db: D1Database) => db.prepare("DELETE FROM prefs WHERE key = 'capture_token'").run();
+export const revokeCaptureToken = (db: D1Database) => db.prepare("DELETE FROM prefs WHERE owner_id = {owner} AND (key = 'capture_token')").run();
+/** Whose quick-capture key this is (run on the system database), or null. The key is random, so its hash is looked up. */
+export async function captureOwner(sys: D1Database, token: string): Promise<string | null> {
+  if (!token.startsWith("sgc_")) return null;
+  const r = await sys.prepare("SELECT owner_id FROM prefs WHERE key = 'capture_token' AND value = ? /*any-owner*/").bind(await sha256(token)).first<{ owner_id: string }>();
+  return r?.owner_id ?? null;
+}
 export async function checkCaptureToken(db: D1Database, token: string) {
   const want = await getPref(db, "capture_token");
   if (!want || !token.startsWith("sgc_")) return false;

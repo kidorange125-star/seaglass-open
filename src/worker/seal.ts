@@ -37,10 +37,10 @@ export interface SealStatus {
 async function remainingIn(db: D1Database, kid: string) {
   const out: { name: string; remaining: number }[] = [];
   for (const t of TEXT_TABLES) {
-    const r = await db.prepare(`SELECT COUNT(*) AS n FROM ${t.table} WHERE ${staleWhere(t.cols)}`).bind(pattern(kid)).first<{ n: number }>();
+    const r = await db.prepare(`SELECT COUNT(*) AS n FROM ${t.table} WHERE ${staleWhere(t.cols)} /*any-owner*/`).bind(pattern(kid)).first<{ n: number }>();
     out.push({ name: t.table, remaining: r?.n ?? 0 });
   }
-  const e = await db.prepare(`SELECT COUNT(*) AS n FROM embeddings WHERE ${blobStale(kid)}`).first<{ n: number }>();
+  const e = await db.prepare(`SELECT COUNT(*) AS n FROM embeddings WHERE ${blobStale(kid)} /*any-owner*/`).first<{ n: number }>();
   out.push({ name: "embeddings", remaining: e?.n ?? 0 });
   return out;
 }
@@ -66,7 +66,7 @@ async function sealSome(env: Env, kid: string, rowBudget: number, fileBudget: nu
   let work = 0;
   for (const t of TEXT_TABLES) {
     if (rowBudget <= 0) break;
-    const rows = (await db.prepare(`SELECT * FROM ${t.table} WHERE ${staleWhere(t.cols)} LIMIT ${Math.min(rowBudget, 50)}`).bind(pattern(kid)).all<Record<string, unknown>>()).results;
+    const rows = (await db.prepare(`SELECT * FROM ${t.table} WHERE ${staleWhere(t.cols)} /*any-owner*/ LIMIT ${Math.min(rowBudget, 50)}`).bind(pattern(kid)).all<Record<string, unknown>>()).results;
     if (!rows.length) continue;
     const stmts: D1PreparedStatement[] = [];
     for (const r of rows) {
@@ -85,19 +85,19 @@ async function sealSome(env: Env, kid: string, rowBudget: number, fileBudget: nu
       }
       // Only if the row is still exactly what was read: a save made in the meantime (already sealed) must never be overwritten.
       const same = t.cols.filter((c) => typeof r[c] === "string");
-      if (sets.length) stmts.push(db.prepare(`UPDATE ${t.table} SET ${sets.join(", ")} WHERE ${t.key} = ? AND ${same.map((c) => `${c} IS ?`).join(" AND ")}`).bind(...binds, r[t.key], ...same.map((c) => r[c])));
+      if (sets.length) stmts.push(db.prepare(`UPDATE ${t.table} SET ${sets.join(", ")} WHERE ${t.key} = ? AND ${same.map((c) => `${c} IS ?`).join(" AND ")} /*any-owner*/`).bind(...binds, r[t.key], ...same.map((c) => r[c])));
     }
     if (stmts.length) await db.batch(stmts);
     work += rows.length; rowBudget -= rows.length;
   }
   if (rowBudget > 0) {
-    const rows = (await db.prepare(`SELECT note_id, vec FROM embeddings WHERE ${blobStale(kid)} LIMIT ${Math.min(rowBudget, 50)}`).all<{ note_id: string; vec: ArrayBuffer | number[] }>()).results;
+    const rows = (await db.prepare(`SELECT note_id, vec FROM embeddings WHERE ${blobStale(kid)} LIMIT ${Math.min(rowBudget, 50)} /*any-owner*/`).all<{ note_id: string; vec: ArrayBuffer | number[] }>()).results;
     if (rows.length) {
       const stmts: D1PreparedStatement[] = [];
       for (const r of rows) {
         const raw = r.vec instanceof ArrayBuffer ? new Uint8Array(r.vec) : Uint8Array.from(r.vec as ArrayLike<number>);
         const sealed = await Vault.sealBytes("embeddings", r.note_id, "vec", await Vault.openBytes("embeddings", r.note_id, "vec", raw));
-        stmts.push(db.prepare("UPDATE embeddings SET vec = ? WHERE note_id = ? AND vec IS ?").bind(sealed.buffer.slice(sealed.byteOffset, sealed.byteOffset + sealed.byteLength), r.note_id, r.vec));
+        stmts.push(db.prepare("UPDATE embeddings SET vec = ? WHERE note_id = ? AND vec IS ? /*any-owner*/").bind(sealed.buffer.slice(sealed.byteOffset, sealed.byteOffset + sealed.byteLength), r.note_id, r.vec));
       }
       await db.batch(stmts);
       work += rows.length;
@@ -116,7 +116,7 @@ async function sealSome(env: Env, kid: string, rowBudget: number, fileBudget: nu
   return work;
 }
 
-const getPref = async (db: D1Database, k: string) => (await db.prepare("SELECT value FROM prefs WHERE key = ?").bind(k).first<{ value: string }>())?.value ?? null;
+const getPref = async (db: D1Database, k: string) => (await db.prepare("SELECT value FROM prefs WHERE owner_id = '' AND key = ? /*any-owner*/").bind(k).first<{ value: string }>())?.value ?? null;
 
 /** Cron entry point: a few rows per run until everything is on the current key, then one cheap read per minute. */
 export async function maybeBackfill(env: Env): Promise<number> {
@@ -127,7 +127,7 @@ export async function maybeBackfill(env: Env): Promise<number> {
   if (work === 0) {
     // Nothing left to seal this pass: record it, but only if the files are fully done too (the list is capped at 1000).
     const s = await status(env);
-    if (s.complete) await env.DB.prepare("INSERT INTO prefs (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(DONE_PREF, kid).run();
+    if (s.complete) await env.DB.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ('', ?, ?) ON CONFLICT(owner_id, key) DO UPDATE SET value = excluded.value /*any-owner*/").bind(DONE_PREF, kid).run();
   }
   return work;
 }
@@ -138,7 +138,7 @@ export async function sealNow(env: Env): Promise<SealStatus & { sealed: number }
   const kid = await Vault.currentKeyId();
   const sealed = await sealSome(env, kid, 200, 10);
   const s = await status(env);
-  if (s.complete) await env.DB.prepare("INSERT INTO prefs (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(DONE_PREF, kid).run();
-  else await env.DB.prepare("DELETE FROM prefs WHERE key = ?").bind(DONE_PREF).run();
+  if (s.complete) await env.DB.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ('', ?, ?) ON CONFLICT(owner_id, key) DO UPDATE SET value = excluded.value /*any-owner*/").bind(DONE_PREF, kid).run();
+  else await env.DB.prepare("DELETE FROM prefs WHERE owner_id = '' AND key = ? /*any-owner*/").bind(DONE_PREF).run();
   return { ...s, sealed };
 }

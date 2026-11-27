@@ -12,7 +12,7 @@ const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLow
 
 /** Everything in Grades, read once: its class options and each graded row. Null without a Grades database. */
 export async function gradeBook(db: D1Database) {
-  const g = await db.prepare("SELECT id FROM notes WHERE kind = 'database' AND system = 'grades' AND deleted_at IS NULL LIMIT 1").first<{ id: string }>();
+  const g = await db.prepare("SELECT id FROM notes WHERE owner_id = {owner} AND (kind = 'database' AND system = 'grades' AND deleted_at IS NULL) LIMIT 1").first<{ id: string }>();
   if (!g) return null;
   const note = await N.getNote(db, g.id);
   let schema: Schema = {};

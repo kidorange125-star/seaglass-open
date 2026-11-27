@@ -9,22 +9,24 @@ import {
   COOKIE, checkPassword, cookieOptions, createSession, currentUser, endOtherSessions, endSession, hashPassword, isLocalHost,
   loginFailed, loginLocked, loginOk, passwordProblem, safeEqual, usernameProblem, type User,
 } from "./auth";
+import { requireOwner } from "./scope";
 
 export type Household = { mode: "individual" | "household"; name: string };
 
 export async function household(db: D1Database): Promise<Household> {
-  const v = (await db.prepare("SELECT value FROM prefs WHERE key = 'household'").first<{ value: string }>())?.value;
+  const v = (await db.prepare("SELECT value FROM prefs WHERE owner_id = '' AND key = 'household' /*any-owner*/").first<{ value: string }>())?.value;
   try { const h = JSON.parse(v ?? "{}") as Partial<Household>; return { mode: h.mode === "household" ? "household" : "individual", name: typeof h.name === "string" ? h.name : "" }; }
   catch { return { mode: "individual", name: "" }; }
 }
 const saveHousehold = (db: D1Database, h: Household) =>
-  db.prepare("INSERT INTO prefs (key, value) VALUES ('household', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(JSON.stringify(h));
+  db.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ('', 'household', ?) ON CONFLICT(owner_id, key) DO UPDATE SET value = excluded.value /*any-owner*/").bind(JSON.stringify(h));
 
 export const userCount = async (db: D1Database) => (await db.prepare("SELECT COUNT(*) AS n FROM users").first<{ n: number }>())?.n ?? 0;
 
-/** The account owner's name, for the assistant ("You're talking with Sam"). One member for now. */
+/** The name of the person whose database this is, for the assistant ("You're talking with Sam"). */
 export async function ownerName(db: D1Database) {
-  return (await db.prepare("SELECT display_name FROM users ORDER BY created_at LIMIT 1").first<{ display_name: string }>())?.display_name ?? "";
+  const id = requireOwner(db);
+  return (await db.prepare("SELECT display_name FROM users WHERE id = ?").bind(id).first<{ display_name: string }>())?.display_name ?? "";
 }
 
 const clean = (s: unknown, max: number) => (typeof s === "string" ? s.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, max) : "");

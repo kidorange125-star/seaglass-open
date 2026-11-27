@@ -2,7 +2,10 @@ import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 
 // Everything the Worker is bound to. See wrangler.jsonc and docs/SETUP.md.
 export interface Env {
+  /** The database. Inside the Worker it is always wrapped (scope.ts): the system's, or one person's. */
   DB: D1Database;
+  /** The unwrapped database, kept by fetch/scheduled so a person's scope can be made from it (scope.ts asPerson). */
+  RAW?: D1Database;
   FILES: R2Bucket;
   /** Workers AI (Whisper, embeddings). Absent in some test setups, so features check for it. */
   AI?: Ai;

@@ -24,7 +24,7 @@ const subject = (env: Env) => (env.PUBLIC_URL?.startsWith("https://") ? env.PUBL
 
 // ---------------------------------------------------------------- prefs
 export async function getPrefs(db: D1Database): Promise<Prefs> {
-  const r = await db.prepare("SELECT value FROM prefs WHERE key = 'notifications'").first<{ value: string }>();
+  const r = await db.prepare("SELECT value FROM prefs WHERE owner_id = {owner} AND (key = 'notifications')").first<{ value: string }>();
   try { return { ...DEFAULT_PREFS, ...(r ? (JSON.parse(r.value) as Partial<Prefs>) : {}) }; } catch { return DEFAULT_PREFS; }
 }
 export async function setPrefs(db: D1Database, input: Partial<Record<keyof Prefs, unknown>>): Promise<Prefs> {
@@ -47,13 +47,13 @@ export async function setPrefs(db: D1Database, input: Partial<Record<keyof Prefs
     if (r === undefined) throw new N.BadRequest('remind must be minutes before (0-10080) or "none"');
     next.remind = r === null ? "none" : String(r);
   }
-  await db.prepare("INSERT INTO prefs (key, value) VALUES ('notifications', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(JSON.stringify(next)).run();
+  await db.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ({owner}, 'notifications', ?) ON CONFLICT(owner_id, key) DO UPDATE SET value = excluded.value").bind(JSON.stringify(next)).run();
   return next;
 }
 
 // ---------------------------------------------------------------- devices
 export async function listSubs(db: D1Database) {
-  const rows = (await db.prepare("SELECT * FROM push_subs ORDER BY created_at").all<SubRow>()).results;
+  const rows = (await db.prepare("SELECT * FROM push_subs WHERE owner_id = {owner} ORDER BY created_at").all<SubRow>()).results;
   // The device keys (and its name) are sealed in D1; the endpoint stays readable because it is the row's key.
   return Promise.all(rows.map(async (r) => ({ ...r, p256dh: (await Vault.open("push_subs", r.endpoint, "p256dh", r.p256dh)) ?? "", auth: (await Vault.open("push_subs", r.endpoint, "auth", r.auth)) ?? "", label: (await Vault.open("push_subs", r.endpoint, "label", r.label)) ?? "" })));
 }
@@ -65,13 +65,13 @@ export async function saveSub(db: D1Database, input: { endpoint?: unknown; keys?
   const label = String(input.label ?? "").slice(0, 60);
   const t = Date.now();
   await db.prepare(
-    `INSERT INTO push_subs (endpoint, p256dh, auth, tz, label, created_at, seen_at) VALUES (?,?,?,?,?,?,?)
+    `INSERT INTO push_subs (owner_id, endpoint, p256dh, auth, tz, label, created_at, seen_at) VALUES ({owner}, ?,?,?,?,?,?,?)
      ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, tz = excluded.tz, label = excluded.label, seen_at = excluded.seen_at, last_error = NULL`,
   ).bind(endpoint, await Vault.seal("push_subs", endpoint, "p256dh", p256dh), await Vault.seal("push_subs", endpoint, "auth", auth), input.tz, await Vault.seal("push_subs", endpoint, "label", label), t, t).run();
   return { ok: true };
 }
 export async function deleteSub(db: D1Database, endpoint: string) {
-  const r = await db.prepare("DELETE FROM push_subs WHERE endpoint = ?").bind(endpoint).run();
+  const r = await db.prepare("DELETE FROM push_subs WHERE owner_id = {owner} AND (endpoint = ?)").bind(endpoint).run();
   return r.meta.changes > 0;
 }
 
@@ -86,11 +86,11 @@ export async function sendAll(env: Env, subs: SubRow[], payload: Payload) {
   const errors: string[] = [];
   await Promise.all(subs.map(async (s) => {
     const r = await sendPush(s as PushSub, payload, key, subject(env), { topic: payload.tag });
-    if (r.ok) { sent++; if (s.last_error) await env.DB.prepare("UPDATE push_subs SET last_error = NULL WHERE endpoint = ?").bind(s.endpoint).run(); return; }
+    if (r.ok) { sent++; if (s.last_error) await env.DB.prepare("UPDATE push_subs SET last_error = NULL WHERE owner_id = {owner} AND (endpoint = ?)").bind(s.endpoint).run(); return; }
     failed++;
     errors.push(`${r.status} ${r.detail}`.trim());
-    if (r.gone) await env.DB.prepare("DELETE FROM push_subs WHERE endpoint = ?").bind(s.endpoint).run();
-    else await env.DB.prepare("UPDATE push_subs SET last_error = ? WHERE endpoint = ?").bind(`${r.status} ${r.detail}`.slice(0, 300), s.endpoint).run();
+    if (r.gone) await env.DB.prepare("DELETE FROM push_subs WHERE owner_id = {owner} AND (endpoint = ?)").bind(s.endpoint).run();
+    else await env.DB.prepare("UPDATE push_subs SET last_error = ? WHERE owner_id = {owner} AND (endpoint = ?)").bind(`${r.status} ${r.detail}`.slice(0, 300), s.endpoint).run();
   }));
   return { sent, failed, errors };
 }
@@ -99,7 +99,7 @@ const taskActions = [{ action: "done", title: "Done" }, { action: "snooze", titl
 
 /** Claims a reminder key; false if it was already sent (so overlapping runs can't send twice). */
 async function claim(db: D1Database, key: string, t: number) {
-  const r = await db.prepare("INSERT OR IGNORE INTO push_sent (key, sent_at) VALUES (?, ?)").bind(key, t).run();
+  const r = await db.prepare("INSERT OR IGNORE INTO push_sent (owner_id, key, sent_at) VALUES ({owner}, ?, ?)").bind(key, t).run();
   return r.meta.changes > 0;
 }
 
@@ -109,8 +109,8 @@ async function claim(db: D1Database, key: string, t: number) {
 async function datedRows(db: D1Database): Promise<Row[]> {
   const rs = (await db.prepare(
     `SELECT n.id, n.title, n.props, n.updated_at, p.id AS db_id, p.title AS db_title, p.db_schema
-     FROM notes n JOIN notes p ON p.id = n.parent_id
-     WHERE n.deleted_at IS NULL AND p.deleted_at IS NULL AND p.kind = 'database' AND n.is_template = 0 AND n.dated = 1
+     FROM notes n JOIN notes p ON p.owner_id = {owner} AND p.id = n.parent_id
+     WHERE n.owner_id = {owner} AND (n.deleted_at IS NULL AND p.deleted_at IS NULL AND p.kind = 'database' AND n.is_template = 0 AND n.dated = 1)
      LIMIT 2000`,
   ).all<{ id: string; title: string; props: string; updated_at: number; db_id: string; db_title: string; db_schema: string | null }>()).results;
   const out: Row[] = [];
@@ -130,14 +130,14 @@ async function datedRows(db: D1Database): Promise<Row[]> {
 // Held during quiet hours: a line for each thing that would have buzzed, sealed in prefs, sent as one notification when they end.
 const HELD = "push_held";
 async function heldList(db: D1Database): Promise<string[]> {
-  const r = await db.prepare("SELECT value FROM prefs WHERE key = ?").bind(HELD).first<{ value: string }>();
+  const r = await db.prepare("SELECT value FROM prefs WHERE owner_id = {owner} AND (key = ?)").bind(HELD).first<{ value: string }>();
   if (!r) return [];
   try { return JSON.parse((await Vault.open("prefs", HELD, "value", r.value)) ?? "[]") as string[]; } catch { return []; }
 }
 async function hold(db: D1Database, lines: string[]) {
   if (!lines.length) return;
   const all = [...(await heldList(db)), ...lines].slice(-30);
-  await db.prepare("INSERT INTO prefs (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(HELD, await Vault.seal("prefs", HELD, "value", JSON.stringify(all))).run();
+  await db.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ({owner}, ?, ?) ON CONFLICT(owner_id, key) DO UPDATE SET value = excluded.value").bind(HELD, await Vault.seal("prefs", HELD, "value", JSON.stringify(all))).run();
 }
 /** Whether it's quiet hours for them now (in the time zone of their devices). */
 export async function isQuietNow(db: D1Database, now = Date.now(), subs?: SubRow[]) {
@@ -173,10 +173,10 @@ export async function runReminders(env: Env, now = Date.now()) {
   const quietAll = await isQuietNow(db, now, subs);
 
   // a snoozed reminder waits out quiet hours (it stays due, so it goes once they end)
-  const snoozed = quietAll ? [] : await Promise.all((await db.prepare("SELECT * FROM push_snooze WHERE fire_at <= ?").bind(now).all<{ note_id: string; title: string; body: string }>()).results
+  const snoozed = quietAll ? [] : await Promise.all((await db.prepare("SELECT * FROM push_snooze WHERE owner_id = {owner} AND (fire_at <= ?)").bind(now).all<{ note_id: string; title: string; body: string }>()).results
     .map(async (s) => ({ ...s, title: (await Vault.open("push_snooze", s.note_id, "title", s.title)) ?? "", body: (await Vault.open("push_snooze", s.note_id, "body", s.body)) ?? "" })));
   for (const s of snoozed) {
-    await db.prepare("DELETE FROM push_snooze WHERE note_id = ?").bind(s.note_id).run();
+    await db.prepare("DELETE FROM push_snooze WHERE owner_id = {owner} AND (note_id = ?)").bind(s.note_id).run();
     sent += (await sendAll(env, subs, { title: s.title, body: s.body || "Snoozed reminder", tag: `task-${s.note_id}`, url: `/?peek=${s.note_id}#/tasks`, id: s.note_id, actions: taskActions })).sent;
   }
 
@@ -186,7 +186,7 @@ export async function runReminders(env: Env, now = Date.now()) {
   for (const s of subs) byTz.set(s.tz, [...(byTz.get(s.tz) ?? []), s]);
   for (const [tz, group] of byTz) {
     if (!isTimeZone(tz)) continue;
-    const cardsDue = (await db.prepare("SELECT COUNT(*) AS n FROM study s JOIN notes n ON n.id = s.note_id WHERE n.deleted_at IS NULL AND s.due <= ?").bind(localNow(now, tz).date).first<{ n: number }>())?.n ?? 0;
+    const cardsDue = (await db.prepare("SELECT COUNT(*) AS n FROM study s JOIN notes n ON n.owner_id = {owner} AND n.id = s.note_id WHERE s.owner_id = {owner} AND (n.deleted_at IS NULL AND s.due <= ?)").bind(localNow(now, tz).date).first<{ n: number }>())?.n ?? 0;
     const plan = planReminders(rows, now, tz, prefs, cardsDue);
     const quiet = quietNow(prefs.quiet, now, tz);
     for (const r of plan.reminders) {
@@ -208,11 +208,11 @@ export async function runReminders(env: Env, now = Date.now()) {
   if (!quietAll) {
     const was = await heldList(db);
     if (was.length) {
-      await db.prepare("DELETE FROM prefs WHERE key = ?").bind(HELD).run();
+      await db.prepare("DELETE FROM prefs WHERE owner_id = {owner} AND (key = ?)").bind(HELD).run();
       sent += (await sendAll(env, subs, { title: `While quiet hours were on: ${was.length} notification${was.length === 1 ? "" : "s"}`, body: was.slice(0, 4).join(" · ") + (was.length > 4 ? ` · +${was.length - 4} more` : ""), tag: "quiet-catch-up", url: "/#/tasks" })).sent;
     }
   }
-  await db.prepare("DELETE FROM push_sent WHERE sent_at < ?").bind(now - 8 * 86_400_000).run();
+  await db.prepare("DELETE FROM push_sent WHERE owner_id = {owner} AND (sent_at < ?)").bind(now - 8 * 86_400_000).run();
   return { sent };
 }
 
@@ -223,7 +223,7 @@ export async function notificationAction(env: Env, id: string, action: string, t
   const row = await N.getNote(db, id);
   if (!row || !row.parent_id) return { ok: false, error: "not found" };
   if (action === "snooze") {
-    await db.prepare("INSERT INTO push_snooze (note_id, fire_at, title, body) VALUES (?,?,?,?) ON CONFLICT(note_id) DO UPDATE SET fire_at = excluded.fire_at")
+    await db.prepare("INSERT INTO push_snooze (owner_id, note_id, fire_at, title, body) VALUES ({owner}, ?,?,?,?) ON CONFLICT(note_id) DO UPDATE SET fire_at = excluded.fire_at")
       .bind(id, Date.now() + 10 * 60_000, await Vault.seal("push_snooze", id, "title", row.title || "Untitled"), await Vault.seal("push_snooze", id, "body", "Snoozed reminder")).run();
     return { ok: true };
   }

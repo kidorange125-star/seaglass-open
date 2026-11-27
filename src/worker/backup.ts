@@ -43,7 +43,7 @@ export async function dump(db: D1Database, now = Date.now()): Promise<Dump> {
     const rows: Record<string, unknown>[] = [];
     let after = Number.MIN_SAFE_INTEGER;
     for (;;) {
-      const page = (await db.prepare(`SELECT rowid AS "__rid", * FROM "${t}" WHERE rowid > ? ORDER BY rowid LIMIT ${PAGE}`).bind(after).all<Record<string, unknown>>()).results;
+      const page = (await db.prepare(`SELECT rowid AS "__rid", * FROM "${t}" WHERE rowid > ? /*any-owner*/ ORDER BY rowid LIMIT ${PAGE}`).bind(after).all<Record<string, unknown>>()).results;
       for (const r of page) {
         after = Number(r.__rid);
         const row: Record<string, unknown> = {};
@@ -83,10 +83,10 @@ export async function verify(env: Env, name: string, want: Dump) {
 }
 
 async function setStatus(db: D1Database, s: Status) {
-  await db.prepare("INSERT INTO prefs (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(STATUS, JSON.stringify(s)).run();
+  await db.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ('', ?, ?) ON CONFLICT(owner_id, key) DO UPDATE SET value = excluded.value /*any-owner*/").bind(STATUS, JSON.stringify(s)).run();
 }
 export async function status(db: D1Database): Promise<Status | null> {
-  const v = (await db.prepare("SELECT value FROM prefs WHERE key = ?").bind(STATUS).first<{ value: string }>())?.value;
+  const v = (await db.prepare("SELECT value FROM prefs WHERE owner_id = '' AND key = ? /*any-owner*/").bind(STATUS).first<{ value: string }>())?.value;
   try { return v ? JSON.parse(v) as Status : null; } catch { return null; }
 }
 
@@ -107,7 +107,7 @@ export async function list(env: Env): Promise<Item[]> {
 /** The very first backup doesn't wait for the night: the every-minute cron makes one as soon as none has ever been made.
  *  The status row is claimed first (insert-if-missing), so two cron ticks can't both start one. */
 export async function firstRun(env: Env, now = Date.now()) {
-  const claim = await env.DB.prepare("INSERT OR IGNORE INTO prefs (key, value) VALUES (?, ?)").bind(STATUS, JSON.stringify({ at: now, ok: false, error: "The first backup is running" } satisfies Status)).run();
+  const claim = await env.DB.prepare("INSERT OR IGNORE INTO prefs (owner_id, key, value) VALUES ('', ?, ?) /*any-owner*/").bind(STATUS, JSON.stringify({ at: now, ok: false, error: "The first backup is running" } satisfies Status)).run();
   return claim.meta.changes ? run(env, now) : null;
 }
 

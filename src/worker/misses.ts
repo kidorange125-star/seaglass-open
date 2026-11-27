@@ -17,7 +17,7 @@ const KEEP = 300, REVIEW = 10, MODEL = "claude-haiku-5-5";
 const key = (q: string) => q.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 async function rows(db: D1Database): Promise<Row[]> {
-  const r = await db.prepare("SELECT id, data, due_at, rights, misses FROM study_misses ORDER BY due_at LIMIT 400").all<{ id: string; data: string; due_at: number; rights: number; misses: number }>();
+  const r = await db.prepare("SELECT id, data, due_at, rights, misses FROM study_misses WHERE owner_id = {owner} ORDER BY due_at LIMIT 400").all<{ id: string; data: string; due_at: number; rights: number; misses: number }>();
   const out: Row[] = [];
   for (const x of r.results) {
     try {
@@ -45,26 +45,26 @@ export async function record(db: D1Database, s: StudySession, played: PlayedItem
     const row = (p.miss ? byId.get(p.miss) : undefined) ?? byKey.get(key(p.q)) ?? null;
     const next = missAfter(row, p.right, now);
     if (next === null || next === row) continue;
-    if (next === "gone") { stmts.push(db.prepare("DELETE FROM study_misses WHERE id = ?").bind(row!.id)); byId.delete(row!.id); continue; }
+    if (next === "gone") { stmts.push(db.prepare("DELETE FROM study_misses WHERE owner_id = {owner} AND (id = ?)").bind(row!.id)); byId.delete(row!.id); continue; }
     if (row) {
-      stmts.push(db.prepare("UPDATE study_misses SET due_at = ?, rights = ?, misses = ?, updated_at = ? WHERE id = ?").bind(next.due_at, next.rights, next.misses, now, row.id));
+      stmts.push(db.prepare("UPDATE study_misses SET due_at = ?, rights = ?, misses = ?, updated_at = ? WHERE owner_id = {owner} AND (id = ?)").bind(next.due_at, next.rights, next.misses, now, row.id));
       Object.assign(row, next);
       continue;
     }
     const id = crypto.randomUUID();
     const miss: Miss = { q: p.q, answer: p.answer, type: p.type, ids: s.ids, title: s.title, ...(p.options ? { options: p.options, correct: p.correct } : {}), ...(p.why ? { why: p.why } : {}) };
-    stmts.push(db.prepare("INSERT INTO study_misses (id, data, due_at, rights, misses, created_at, updated_at) VALUES (?,?,?,?,?,?,?)")
+    stmts.push(db.prepare("INSERT INTO study_misses (owner_id, id, data, due_at, rights, misses, created_at, updated_at) VALUES ({owner}, ?,?,?,?,?,?,?)")
       .bind(id, await Vault.seal("study_misses", id, "data", JSON.stringify(miss)), next.due_at, next.rights, next.misses, now, now));
     byKey.set(key(p.q), { id, miss, ...next });
   }
   if (!stmts.length) return;
-  stmts.push(db.prepare("DELETE FROM study_misses WHERE id NOT IN (SELECT id FROM study_misses ORDER BY updated_at DESC LIMIT ?)").bind(KEEP));
+  stmts.push(db.prepare("DELETE FROM study_misses WHERE owner_id = {owner} AND (id NOT IN (SELECT id FROM study_misses WHERE owner_id = {owner} ORDER BY updated_at DESC LIMIT ?))").bind(KEEP));
   await db.batch(stmts);
 }
 
 /** How many are waiting, and how many of those are due now. SQL can count these: the numbers aren't sealed. */
 export async function count(db: D1Database, now = Date.now()) {
-  const r = await db.prepare("SELECT COUNT(*) AS open, COALESCE(SUM(CASE WHEN due_at <= ? THEN 1 ELSE 0 END), 0) AS due FROM study_misses").bind(now).first<{ open: number; due: number }>();
+  const r = await db.prepare("SELECT COUNT(*) AS open, COALESCE(SUM(CASE WHEN due_at <= ? THEN 1 ELSE 0 END), 0) AS due FROM study_misses WHERE owner_id = {owner}").bind(now).first<{ open: number; due: number }>();
   return { open: r?.open ?? 0, due: r?.due ?? 0 };
 }
 

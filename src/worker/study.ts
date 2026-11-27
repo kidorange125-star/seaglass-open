@@ -24,14 +24,14 @@ export interface Deck {
 export interface Exam { id: string; subject_id: string; name: string; exam_date: string | null; position: number; done_at: number | null; created_at: number; page_ids: string[]; grade: ExamGrade | null }
 
 export async function listSubjects(db: D1Database): Promise<Subject[]> {
-  const rows = (await db.prepare("SELECT id, name, color, icon, exam_date, position, done_at, created_at, grade_class FROM study_subjects ORDER BY position, created_at").all<Subject>()).results;
+  const rows = (await db.prepare("SELECT id, name, color, icon, exam_date, position, done_at, created_at, grade_class FROM study_subjects WHERE owner_id = {owner} ORDER BY position, created_at").all<Subject>()).results;
   return Promise.all(rows.map(async (r) => ({ ...r, name: (await Vault.open("study_subjects", r.id, "name", r.name)) ?? "", icon: r.icon ? await Vault.open("study_subjects", r.id, "icon", r.icon) : null })));
 }
 
 export async function listExams(db: D1Database): Promise<Exam[]> {
   const [rows, links] = await Promise.all([
-    db.prepare("SELECT id, subject_id, name, exam_date, position, done_at, created_at, grade FROM study_exams ORDER BY position, created_at").all<Omit<Exam, "page_ids" | "grade"> & { grade: string | null }>(),
-    db.prepare("SELECT exam_id, note_id FROM study_exam_pages").all<{ exam_id: string; note_id: string }>(),
+    db.prepare("SELECT id, subject_id, name, exam_date, position, done_at, created_at, grade FROM study_exams WHERE owner_id = {owner} ORDER BY position, created_at").all<Omit<Exam, "page_ids" | "grade"> & { grade: string | null }>(),
+    db.prepare("SELECT exam_id, note_id FROM study_exam_pages WHERE owner_id = {owner}").all<{ exam_id: string; note_id: string }>(),
   ]);
   const pages = new Map<string, string[]>();
   for (const l of links.results) pages.set(l.exam_id, [...(pages.get(l.exam_id) ?? []), l.note_id]);
@@ -52,7 +52,7 @@ export async function logGrade(db: D1Database, id: string, b: { score?: unknown;
   if (isGraded(exam.grade)) throw new StudyError(`${exam.name} already has a grade (${exam.grade.pct}%). Undo that one first.`);
   const now = Date.now();
   const save = async (g: ExamGrade) => {
-    await db.prepare("UPDATE study_exams SET grade = ?, done_at = COALESCE(done_at, ?), updated_at = ? WHERE id = ?")
+    await db.prepare("UPDATE study_exams SET grade = ?, done_at = COALESCE(done_at, ?), updated_at = ? WHERE owner_id = {owner} AND (id = ?)")
       .bind(await Vault.seal("study_exams", id, "grade", JSON.stringify(g)), now, now, id).run();
     return { ...exam, grade: g, done_at: exam.done_at ?? now };
   };
@@ -86,7 +86,7 @@ export async function clearGrade(db: D1Database, id: string) {
   const exam = (await listExams(db)).find((e) => e.id === id);
   if (!exam) throw new StudyError("That test is gone.");
   if (isGraded(exam.grade) && exam.grade.run_id) await N.undoRun(db, exam.grade.run_id, { force: true });
-  await db.prepare("UPDATE study_exams SET grade = NULL, done_at = NULL, updated_at = ? WHERE id = ?").bind(Date.now(), id).run();
+  await db.prepare("UPDATE study_exams SET grade = NULL, done_at = NULL, updated_at = ? WHERE owner_id = {owner} AND (id = ?)").bind(Date.now(), id).run();
   return { ...exam, grade: null, done_at: null };
 }
 
@@ -102,11 +102,11 @@ export async function overview(db: D1Database, today: string, studied?: Set<stri
   const [raw, exams, notes, prog, pages] = await Promise.all([
     listSubjects(db),
     listExams(db),
-    db.prepare("SELECT id, title, icon, html, updated_at FROM notes WHERE deleted_at IS NULL AND kind = 'page' ORDER BY updated_at DESC LIMIT 400").all<{ id: string; title: string; icon: string | null; html: string; updated_at: number }>(),
+    db.prepare("SELECT id, title, icon, html, updated_at FROM notes WHERE owner_id = {owner} AND (deleted_at IS NULL AND kind = 'page') ORDER BY updated_at DESC LIMIT 400").all<{ id: string; title: string; icon: string | null; html: string; updated_at: number }>(),
     db.prepare(`SELECT note_id, SUM(CASE WHEN due <= ?1 THEN 1 ELSE 0 END) AS due, COUNT(*) AS seen,
-                SUM(CASE WHEN interval >= ?2 THEN 1 ELSE 0 END) AS mastered, MAX(updated_at) AS last FROM study GROUP BY note_id`)
+                SUM(CASE WHEN interval >= ?2 THEN 1 ELSE 0 END) AS mastered, MAX(updated_at) AS last FROM study WHERE owner_id = {owner} GROUP BY note_id`)
       .bind(today, MASTERED_DAYS).all<{ note_id: string; due: number; seen: number; mastered: number; last: number }>(),
-    db.prepare("SELECT note_id, subject_id, excluded, pinned, done_at FROM study_pages").all<{ note_id: string; subject_id: string | null; excluded: number; pinned: number; done_at: number | null }>(),
+    db.prepare("SELECT note_id, subject_id, excluded, pinned, done_at FROM study_pages WHERE owner_id = {owner}").all<{ note_id: string; subject_id: string | null; excluded: number; pinned: number; done_at: number | null }>(),
   ]);
   const progOf = new Map(prog.results.map((r) => [r.note_id, r]));
   const pageOf = new Map(pages.results.map((r) => [r.note_id, r]));
@@ -133,7 +133,7 @@ export async function overview(db: D1Database, today: string, studied?: Set<stri
 
 /** Every flashcard on these pages (or every page with progress) and where it stands in the schedule. */
 export async function flashcardProgress(db: D1Database, today: string, ids?: string[]) {
-  const rows = (await db.prepare("SELECT note_id, card_id, ease, interval, reps, lapses, due, updated_at FROM study").all<{ note_id: string; card_id: string; ease: number; interval: number; reps: number; lapses: number; due: string; updated_at: number }>()).results;
+  const rows = (await db.prepare("SELECT note_id, card_id, ease, interval, reps, lapses, due, updated_at FROM study WHERE owner_id = {owner}").all<{ note_id: string; card_id: string; ease: number; interval: number; reps: number; lapses: number; due: string; updated_at: number }>()).results;
   const byNote = new Map<string, typeof rows>();
   for (const r of rows) byNote.set(r.note_id, [...(byNote.get(r.note_id) ?? []), r]);
   const pages = [];
@@ -169,7 +169,7 @@ async function realPages(db: D1Database, v: unknown): Promise<string[]> {
   if (!Array.isArray(v) || v.length > 100 || !v.every((x) => typeof x === "string" && UUID.test(x))) throw new StudyError("pages must be a list of page ids (100 at most)");
   const ids = [...new Set(v as string[])];
   if (!ids.length) return [];
-  const found = await db.prepare(`SELECT id FROM notes WHERE kind = 'page' AND deleted_at IS NULL AND id IN (${ids.map(() => "?").join(",")})`).bind(...ids).all<{ id: string }>();
+  const found = await db.prepare(`SELECT id FROM notes WHERE owner_id = {owner} AND (kind = 'page' AND deleted_at IS NULL AND id IN (${ids.map(() => "?").join(",")}))`).bind(...ids).all<{ id: string }>();
   return found.results.map((r) => r.id);
 }
 const cleanColor = (v: unknown) => {
@@ -194,7 +194,7 @@ export async function createSubject(db: D1Database, b: { name?: unknown; color?:
   const color = cleanColor(b.color) ?? COLORS[(subjects.length + 5) % COLORS.length];
   const exam = cleanDay(b.exam_date) ?? null;
   const position = Math.max(0, ...subjects.map((s) => s.position)) + 1, icon = cleanIcon(b.icon) ?? null;
-  await db.prepare("INSERT INTO study_subjects (id, name, color, icon, exam_date, position, done_at, created_at, updated_at) VALUES (?,?,?,?,?,?,NULL,?,?)")
+  await db.prepare("INSERT INTO study_subjects (owner_id, id, name, color, icon, exam_date, position, done_at, created_at, updated_at) VALUES ({owner}, ?,?,?,?,?,?,NULL,?,?)")
     .bind(id, await Vault.seal("study_subjects", id, "name", name), color, icon ? await Vault.seal("study_subjects", id, "icon", icon) : null, exam, position, now, now).run();
   return { id, name, color, icon, exam_date: exam, position, done_at: null, created_at: now, grade_class: null };
 }
@@ -217,7 +217,7 @@ export async function updateSubject(db: D1Database, id: string, b: { name?: unkn
   const done_at = b.done === undefined ? cur.done_at : b.done ? cur.done_at ?? Date.now() : null;
   const given = cleanIcon(b.icon), icon = given === undefined ? cur.icon : given;
   const grade_class = b.grade_class === undefined ? cur.grade_class : typeof b.grade_class === "string" && /^[\w-]{1,64}$/.test(b.grade_class) ? b.grade_class : null;
-  await db.prepare("UPDATE study_subjects SET name = ?, color = ?, icon = ?, exam_date = ?, position = ?, done_at = ?, grade_class = ?, updated_at = ? WHERE id = ?")
+  await db.prepare("UPDATE study_subjects SET name = ?, color = ?, icon = ?, exam_date = ?, position = ?, done_at = ?, grade_class = ?, updated_at = ? WHERE owner_id = {owner} AND (id = ?)")
     .bind(await Vault.seal("study_subjects", cur.id, "name", name), color, icon ? await Vault.seal("study_subjects", cur.id, "icon", icon) : null, exam, position, done_at, grade_class, Date.now(), cur.id).run();
   return { ...cur, name, color, icon, exam_date: exam, position, done_at, grade_class };
 }
@@ -226,10 +226,10 @@ export async function updateSubject(db: D1Database, id: string, b: { name?: unkn
 export async function deleteSubject(db: D1Database, id: string) {
   const s = await findSubject(db, id);
   await db.batch([
-    db.prepare("DELETE FROM study_exam_pages WHERE exam_id IN (SELECT id FROM study_exams WHERE subject_id = ?)").bind(s.id),
-    db.prepare("DELETE FROM study_exams WHERE subject_id = ?").bind(s.id),
-    db.prepare("DELETE FROM study_subjects WHERE id = ?").bind(s.id),
-    db.prepare("UPDATE study_pages SET subject_id = NULL, updated_at = ? WHERE subject_id = ?").bind(Date.now(), s.id),
+    db.prepare("DELETE FROM study_exam_pages WHERE owner_id = {owner} AND (exam_id IN (SELECT id FROM study_exams WHERE owner_id = {owner} AND (subject_id = ?)))").bind(s.id),
+    db.prepare("DELETE FROM study_exams WHERE owner_id = {owner} AND (subject_id = ?)").bind(s.id),
+    db.prepare("DELETE FROM study_subjects WHERE owner_id = {owner} AND (id = ?)").bind(s.id),
+    db.prepare("UPDATE study_pages SET subject_id = NULL, updated_at = ? WHERE owner_id = {owner} AND (subject_id = ?)").bind(Date.now(), s.id),
   ]);
   return s;
 }
@@ -252,10 +252,10 @@ export async function findExam(db: D1Database, ref: unknown, subject?: unknown):
 function examPageStmts(db: D1Database, exam: string, subject: string, pages: string[], replace: boolean) {
   const now = Date.now();
   return [
-    ...(replace ? [db.prepare("DELETE FROM study_exam_pages WHERE exam_id = ?").bind(exam)] : []),
+    ...(replace ? [db.prepare("DELETE FROM study_exam_pages WHERE owner_id = {owner} AND (exam_id = ?)").bind(exam)] : []),
     ...pages.flatMap((id) => [
-      db.prepare("INSERT OR IGNORE INTO study_exam_pages (exam_id, note_id) VALUES (?,?)").bind(exam, id),
-      db.prepare(`INSERT INTO study_pages (note_id, subject_id, excluded, pinned, done_at, updated_at) VALUES (?,?,0,0,NULL,?)
+      db.prepare("INSERT OR IGNORE INTO study_exam_pages (owner_id, exam_id, note_id) VALUES ({owner}, ?,?)").bind(exam, id),
+      db.prepare(`INSERT INTO study_pages (owner_id, note_id, subject_id, excluded, pinned, done_at, updated_at) VALUES ({owner}, ?,?,0,0,NULL,?)
         ON CONFLICT(note_id) DO UPDATE SET subject_id = excluded.subject_id, updated_at = excluded.updated_at`).bind(id, subject, now),
     ]),
   ];
@@ -271,9 +271,9 @@ export async function createExam(db: D1Database, b: { subject?: unknown; name?: 
   const exam_date = cleanDay(b.exam_date) ?? sub.exam_date; // a date set on the subject moves onto its first test
   const position = Math.max(0, ...all.map((e) => e.position)) + 1;
   await db.batch([
-    db.prepare("INSERT INTO study_exams (id, subject_id, name, exam_date, position, done_at, created_at, updated_at) VALUES (?,?,?,?,?,NULL,?,?)")
+    db.prepare("INSERT INTO study_exams (owner_id, id, subject_id, name, exam_date, position, done_at, created_at, updated_at) VALUES ({owner}, ?,?,?,?,?,NULL,?,?)")
       .bind(id, sub.id, await Vault.seal("study_exams", id, "name", name), exam_date, position, now, now),
-    db.prepare("UPDATE study_subjects SET exam_date = NULL, updated_at = ? WHERE id = ?").bind(now, sub.id),
+    db.prepare("UPDATE study_subjects SET exam_date = NULL, updated_at = ? WHERE owner_id = {owner} AND (id = ?)").bind(now, sub.id),
     ...examPageStmts(db, id, sub.id, pages, false),
   ]);
   return { id, subject_id: sub.id, name, exam_date, position, done_at: null, created_at: now, page_ids: pages, grade: null };
@@ -286,7 +286,7 @@ export async function updateExam(db: D1Database, ref: string, b: { subject?: unk
   const done_at = b.done === undefined ? cur.done_at : b.done ? cur.done_at ?? Date.now() : null;
   const pages = b.pages === undefined ? null : await realPages(db, b.pages), add = b.add_pages === undefined ? [] : await realPages(db, b.add_pages);
   await db.batch([
-    db.prepare("UPDATE study_exams SET name = ?, exam_date = ?, done_at = ?, updated_at = ? WHERE id = ?").bind(await Vault.seal("study_exams", cur.id, "name", name), exam_date, done_at, Date.now(), cur.id),
+    db.prepare("UPDATE study_exams SET name = ?, exam_date = ?, done_at = ?, updated_at = ? WHERE owner_id = {owner} AND (id = ?)").bind(await Vault.seal("study_exams", cur.id, "name", name), exam_date, done_at, Date.now(), cur.id),
     ...(pages ? examPageStmts(db, cur.id, cur.subject_id, pages, true) : []),
     ...examPageStmts(db, cur.id, cur.subject_id, add, false),
   ]);
@@ -296,14 +296,14 @@ export async function updateExam(db: D1Database, ref: string, b: { subject?: unk
 /** Deletes a test; its pages stay in the subject. */
 export async function deleteExam(db: D1Database, ref: string, subject?: unknown) {
   const e = await findExam(db, ref, subject);
-  await db.batch([db.prepare("DELETE FROM study_exam_pages WHERE exam_id = ?").bind(e.id), db.prepare("DELETE FROM study_exams WHERE id = ?").bind(e.id)]);
+  await db.batch([db.prepare("DELETE FROM study_exam_pages WHERE owner_id = {owner} AND (exam_id = ?)").bind(e.id), db.prepare("DELETE FROM study_exams WHERE owner_id = {owner} AND (id = ?)").bind(e.id)]);
   return e;
 }
 
 /** The pages in a subject, by subject id or name. */
 export async function subjectPages(db: D1Database, ref: unknown) {
   const s = await findSubject(db, ref);
-  return (await db.prepare("SELECT note_id FROM study_pages WHERE subject_id = ?").bind(s.id).all<{ note_id: string }>()).results.map((r) => r.note_id);
+  return (await db.prepare("SELECT note_id FROM study_pages WHERE owner_id = {owner} AND (subject_id = ?)").bind(s.id).all<{ note_id: string }>()).results.map((r) => r.note_id);
 }
 
 export interface PagePatch { subject?: unknown; exam?: unknown; excluded?: unknown; done?: unknown; pinned?: unknown }
@@ -311,7 +311,7 @@ export interface PagePatch { subject?: unknown; exam?: unknown; excluded?: unkno
 export async function setPage(db: D1Database, noteId: string, b: PagePatch) {
   const note = await N.getNote(db, noteId);
   if (!note || note.kind !== "page") throw new StudyError("No such page");
-  const cur = await db.prepare("SELECT subject_id, excluded, pinned, done_at FROM study_pages WHERE note_id = ?").bind(noteId)
+  const cur = await db.prepare("SELECT subject_id, excluded, pinned, done_at FROM study_pages WHERE owner_id = {owner} AND (note_id = ?)").bind(noteId)
     .first<{ subject_id: string | null; excluded: number; pinned: number; done_at: number | null }>() ?? { subject_id: null, excluded: 0, pinned: 0, done_at: null };
   let subject_id = cur.subject_id;
   if (b.subject !== undefined) subject_id = b.subject === null || b.subject === "" ? null : (await findSubject(db, b.subject)).id;
@@ -320,11 +320,11 @@ export async function setPage(db: D1Database, noteId: string, b: PagePatch) {
   const flag = (v: unknown, was: number) => (v === undefined ? was : v ? 1 : 0);
   const excluded = flag(b.excluded, cur.excluded), pinned = flag(b.pinned, cur.pinned);
   const done_at = b.done === undefined ? cur.done_at : b.done ? cur.done_at ?? Date.now() : null;
-  await db.prepare(`INSERT INTO study_pages (note_id, subject_id, excluded, pinned, done_at, updated_at) VALUES (?,?,?,?,?,?)
+  await db.prepare(`INSERT INTO study_pages (owner_id, note_id, subject_id, excluded, pinned, done_at, updated_at) VALUES ({owner}, ?,?,?,?,?,?)
     ON CONFLICT(note_id) DO UPDATE SET subject_id = excluded.subject_id, excluded = excluded.excluded, pinned = excluded.pinned, done_at = excluded.done_at, updated_at = excluded.updated_at`)
     .bind(noteId, subject_id, excluded, pinned, done_at, Date.now()).run();
-  if (toExam) await db.prepare("INSERT OR IGNORE INTO study_exam_pages (exam_id, note_id) VALUES (?,?)").bind(toExam.id, noteId).run();
-  else if (b.exam === null || b.exam === "") await db.prepare("DELETE FROM study_exam_pages WHERE note_id = ?").bind(noteId).run();
-  if (subject_id !== cur.subject_id) await db.prepare("DELETE FROM study_exam_pages WHERE note_id = ? AND exam_id IN (SELECT id FROM study_exams WHERE subject_id IS NOT ?)").bind(noteId, subject_id).run(); // a test only covers pages in its subject
+  if (toExam) await db.prepare("INSERT OR IGNORE INTO study_exam_pages (owner_id, exam_id, note_id) VALUES ({owner}, ?,?)").bind(toExam.id, noteId).run();
+  else if (b.exam === null || b.exam === "") await db.prepare("DELETE FROM study_exam_pages WHERE owner_id = {owner} AND (note_id = ?)").bind(noteId).run();
+  if (subject_id !== cur.subject_id) await db.prepare("DELETE FROM study_exam_pages WHERE owner_id = {owner} AND (note_id = ? AND exam_id IN (SELECT id FROM study_exams WHERE owner_id = {owner} AND (subject_id IS NOT ?)))").bind(noteId, subject_id).run(); // a test only covers pages in its subject
   return { page_id: noteId, title: note.title, subject_id, excluded: !!excluded, pinned: !!pinned, done: done_at !== null };
 }

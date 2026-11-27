@@ -32,7 +32,7 @@ export const startingPoint = (env: { DEFAULT_AGENT_PERMISSIONS?: string }): Perm
   PRESETS[(env.DEFAULT_AGENT_PERMISSIONS ?? "") as keyof typeof PRESETS] ?? DEFAULT;
 
 export async function permissions(db: D1Database, base: Permissions = DEFAULT): Promise<Permissions> {
-  const v = (await db.prepare("SELECT value FROM prefs WHERE key = 'agent_permissions'").first<{ value: string }>())?.value;
+  const v = (await db.prepare("SELECT value FROM prefs WHERE owner_id = {owner} AND (key = 'agent_permissions')").first<{ value: string }>())?.value;
   try {
     const p = JSON.parse(v ?? "{}") as Partial<Permissions>;
     return Object.fromEntries(KINDS.map((k) => [k, p[k] === "allow" || p[k] === "ask" || p[k] === "never" ? p[k] : base[k]])) as Permissions;
@@ -43,7 +43,7 @@ export async function savePermissions(db: D1Database, raw: unknown, base: Permis
   const cur = await permissions(db, base), b = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const next = Object.fromEntries(KINDS.map((k) => [k, b[k] === "allow" || b[k] === "ask" || b[k] === "never" ? b[k] : cur[k]])) as Permissions;
   if (next.web === "ask") next.web = "allow"; // can't pause a search that runs on Claude's side
-  await db.prepare("INSERT INTO prefs (key, value) VALUES ('agent_permissions', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(JSON.stringify(next)).run();
+  await db.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ({owner}, 'agent_permissions', ?) ON CONFLICT(owner_id, key) DO UPDATE SET value = excluded.value").bind(JSON.stringify(next)).run();
   return next;
 }
 
@@ -90,9 +90,9 @@ export async function describe(db: D1Database, tool: string, input: unknown): Pr
 
 export async function ask(db: D1Database, runId: string, tool: string) {
   const id = crypto.randomUUID();
-  await db.prepare("INSERT INTO agent_approvals (id, run_id, tool, status, created_at) VALUES (?, ?, ?, 'pending', ?)").bind(id, runId, tool, Date.now()).run();
+  await db.prepare("INSERT INTO agent_approvals (owner_id, id, run_id, tool, status, created_at) VALUES ({owner}, ?, ?, ?, 'pending', ?)").bind(id, runId, tool, Date.now()).run();
   // old questions go after a day
-  await db.prepare("DELETE FROM agent_approvals WHERE created_at < ?").bind(Date.now() - 864e5).run();
+  await db.prepare("DELETE FROM agent_approvals WHERE owner_id = {owner} AND (created_at < ?)").bind(Date.now() - 864e5).run();
   return id;
 }
 
@@ -101,16 +101,16 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function waitFor(db: D1Database, id: string, isAborted: () => boolean, ms = 5 * 60e3) {
   const until = Date.now() + ms;
   while (Date.now() < until && !isAborted()) {
-    const r = await db.prepare("SELECT status FROM agent_approvals WHERE id = ?").bind(id).first<{ status: string }>();
+    const r = await db.prepare("SELECT status FROM agent_approvals WHERE owner_id = {owner} AND (id = ?)").bind(id).first<{ status: string }>();
     if (r?.status === "approved") return true;
     if (r?.status === "denied") return false;
     await sleep(700);
   }
-  await db.prepare("UPDATE agent_approvals SET status = 'expired', decided_at = ? WHERE id = ? AND status = 'pending'").bind(Date.now(), id).run();
+  await db.prepare("UPDATE agent_approvals SET status = 'expired', decided_at = ? WHERE owner_id = {owner} AND (id = ? AND status = 'pending')").bind(Date.now(), id).run();
   return false;
 }
 
 export async function decide(db: D1Database, id: string, ok: boolean) {
-  const r = await db.prepare("UPDATE agent_approvals SET status = ?, decided_at = ? WHERE id = ? AND status = 'pending'").bind(ok ? "approved" : "denied", Date.now(), id).run();
+  const r = await db.prepare("UPDATE agent_approvals SET status = ?, decided_at = ? WHERE owner_id = {owner} AND (id = ? AND status = 'pending')").bind(ok ? "approved" : "denied", Date.now(), id).run();
   return !!r.meta.changes;
 }

@@ -32,6 +32,7 @@ import * as Suggest from "./suggest";
 import * as Pro from "./proactive";
 import * as Thread from "./thread";
 import { handleMcp } from "./mcp";
+import { asPerson, asSystem, ownerOf, people } from "./scope";
 import { agentCtx } from "./identity";
 import { registerAuthorize } from "./authorize";
 import { authMode, claudeClient, issuerUrl, openidConfiguration, publicJwks, wifMissing } from "./claude-auth";
@@ -46,7 +47,10 @@ app.use("/api/*", async (c, next) => {
   if (c.req.path === "/api/session" || c.req.path === "/api/login" || c.req.path === "/api/logout" || c.req.path === "/api/setup") return next();
   // Quick capture has its own revocable token (it can only add a task or an Inbox line), checked in the handler.
   if (c.req.path === "/api/capture" && c.req.method === "POST" && (c.req.header("Authorization") ?? "").includes("sgc_")) return next();
-  if (!(await currentUser(c.env, c.req.url, getCookie(c, COOKIE)))) return c.json({ error: "unauthorized" }, 401);
+  const u = await currentUser(c.env, c.req.url, getCookie(c, COOKIE));
+  if (!u) return c.json({ error: "unauthorized" }, 401);
+  // From here on, every query this request makes can only reach this person's things (scope.ts).
+  c.env = asPerson(c.env, u.id);
   return next();
 });
 
@@ -77,7 +81,7 @@ app.get("/api/changes", async (c) => {
   const now = Date.now();
   const since = Number(c.req.query("since"));
   if (!Number.isFinite(since) || since <= 0) return c.json({ now, changes: [] });
-  const r = await c.env.DB.prepare("SELECT id, revision, updated_at, deleted_at FROM notes WHERE updated_at > ? ORDER BY updated_at LIMIT 500").bind(since).all();
+  const r = await c.env.DB.prepare("SELECT id, revision, updated_at, deleted_at FROM notes WHERE owner_id = {owner} AND (updated_at > ?) ORDER BY updated_at LIMIT 500").bind(since).all();
   return c.json({ now, changes: r.results });
 });
 app.get("/api/recent", async (c) => c.json(await N.recentNotes(c.env.DB)));
@@ -87,7 +91,14 @@ app.get("/api/search", async (c) => c.json(await N.searchNotes(c.env.DB, c.req.q
 // ---- Quick capture, voice notes, search by meaning (src/worker/semantic.ts, migration 0006).
 app.post("/api/capture", async (c) => {
   const auth = c.req.header("Authorization") ?? "";
-  if (auth.includes("sgc_") && !(await Sem.checkCaptureToken(c.env.DB, auth.replace(/^Bearer\s+/i, "").trim()))) return c.json({ error: "unauthorized" }, 401);
+  if (auth.includes("sgc_")) {
+    // The key says whose it is: capture into that person's things.
+    const token = auth.replace(/^Bearer\s+/i, "").trim();
+    const owner = await Sem.captureOwner(c.env.DB, token);
+    if (!owner) return c.json({ error: "unauthorized" }, 401);
+    c.env = asPerson(c.env, owner);
+    if (!(await Sem.checkCaptureToken(c.env.DB, token))) return c.json({ error: "unauthorized" }, 401);
+  }
   const len = Number(c.req.header("Content-Length") ?? 0);
   if (len > 100_000) return c.json({ error: "too large" }, 413);
   const type = (c.req.header("Content-Type") ?? "").toLowerCase();
@@ -127,7 +138,7 @@ app.post("/api/voice/speak", async (c) => {
 app.post("/api/voice/trace", async (c) => {
   const b = await body<{ e?: unknown; d?: unknown }>(c);
   const event = String(b.e ?? "").slice(0, 40), line = `${new Date().toISOString().slice(11, 23)} ${event} ${String(b.d ?? "").slice(0, 200)}\n`;
-  await c.env.DB.prepare("INSERT INTO prefs (key, value) VALUES ('voice_trace', ?1) ON CONFLICT(key) DO UPDATE SET value = substr(value || excluded.value, -30000)").bind(line).run();
+  await c.env.DB.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ({owner}, 'voice_trace', ?1) ON CONFLICT(owner_id, key) DO UPDATE SET value = substr(value || excluded.value, -30000)").bind(line).run();
   return c.body(null, 204);
 });
 // Live voice where the device can't tell when the user stops talking: the recording so far in, the words and the quiet time since out.
@@ -338,7 +349,7 @@ app.delete("/api/chats/:id", async (c) => { await M.deleteChat(c.env.DB, c.req.p
 const CARD_ID = /^[a-z0-9]{1,16}$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 app.get("/api/study/:id", async (c) => {
-  const r = await c.env.DB.prepare("SELECT card_id, ease, interval, reps, lapses, due FROM study WHERE note_id = ?").bind(c.req.param("id")).all();
+  const r = await c.env.DB.prepare("SELECT card_id, ease, interval, reps, lapses, due FROM study WHERE owner_id = {owner} AND (note_id = ?)").bind(c.req.param("id")).all();
   return c.json(r.results);
 });
 app.put("/api/study/:id/:card", async (c) => {
@@ -346,7 +357,7 @@ app.put("/api/study/:id/:card", async (c) => {
   if (!CARD_ID.test(card) || !isState(s)) return c.json({ error: "bad card or state" }, 400);
   if (!(await N.getNote(c.env.DB, id))) return c.json({ error: "not found" }, 404);
   await c.env.DB.prepare(
-    `INSERT INTO study (note_id, card_id, ease, interval, reps, lapses, due, updated_at) VALUES (?,?,?,?,?,?,?,?)
+    `INSERT INTO study (owner_id, note_id, card_id, ease, interval, reps, lapses, due, updated_at) VALUES ({owner}, ?,?,?,?,?,?,?,?)
      ON CONFLICT(note_id, card_id) DO UPDATE SET ease=excluded.ease, interval=excluded.interval, reps=excluded.reps, lapses=excluded.lapses, due=excluded.due, updated_at=excluded.updated_at`,
   ).bind(id, card, s.ease, Math.round(s.interval), Math.round(s.reps), Math.round(s.lapses), s.due, Date.now()).run();
   return c.json({ ok: true });
@@ -356,8 +367,8 @@ app.post("/api/study/:id/prune", async (c) => {
   const keep = ((await body<{ keep?: unknown }>(c)).keep ?? []) as unknown[];
   if (!Array.isArray(keep) || keep.length > 2000 || !keep.every((k) => typeof k === "string" && CARD_ID.test(k))) return c.json({ error: "bad list" }, 400);
   const id = c.req.param("id");
-  if (!keep.length) await c.env.DB.prepare("DELETE FROM study WHERE note_id = ?").bind(id).run();
-  else await c.env.DB.prepare(`DELETE FROM study WHERE note_id = ? AND card_id NOT IN (${keep.map(() => "?").join(",")})`).bind(id, ...keep).run();
+  if (!keep.length) await c.env.DB.prepare("DELETE FROM study WHERE owner_id = {owner} AND (note_id = ?)").bind(id).run();
+  else await c.env.DB.prepare(`DELETE FROM study WHERE owner_id = {owner} AND (note_id = ? AND card_id NOT IN (${keep.map(() => "?").join(",")}))`).bind(id, ...keep).run();
   return c.json({ ok: true });
 });
 // Study streak: consecutive days (in your time zone) with a finished session or a flashcard review, ending today or yesterday.
@@ -365,7 +376,7 @@ app.get("/api/study-streak", async (c) => {
   const today = c.req.query("today") ?? "", off = Number(c.req.query("tz_offset") ?? 0);
   if (!DAY.test(today) || !Number.isFinite(off) || Math.abs(off) > 900) return c.json({ error: "today must be YYYY-MM-DD and tz_offset minutes" }, 400);
   const days = (await c.env.DB.prepare(
-    "SELECT d FROM (SELECT date((updated_at / 1000) - (?1 * 60), 'unixepoch') AS d FROM study WHERE reps > 0 OR lapses > 0 UNION SELECT date((created_at / 1000) - (?1 * 60), 'unixepoch') FROM study_sessions) ORDER BY d DESC LIMIT 400",
+    "SELECT d FROM (SELECT date((updated_at / 1000) - (?1 * 60), 'unixepoch') AS d FROM study WHERE owner_id = {owner} AND (reps > 0 OR lapses > 0) UNION SELECT date((created_at / 1000) - (?1 * 60), 'unixepoch') FROM study_sessions WHERE owner_id = {owner}) ORDER BY d DESC LIMIT 400",
   ).bind(off).all<{ d: string }>()).results.map((r) => r.d);
   const set = new Set(days);
   const step = (d: string) => { const t = new Date(`${d}T12:00:00Z`); t.setUTCDate(t.getUTCDate() - 1); return t.toISOString().slice(0, 10); };
@@ -377,8 +388,8 @@ app.get("/api/study-due", async (c) => {
   const today = c.req.query("today") ?? "";
   if (!DAY.test(today)) return c.json({ error: "today must be YYYY-MM-DD" }, 400);
   const r = await c.env.DB.prepare(
-    `SELECT s.note_id AS id, n.title, n.icon, COUNT(*) AS due FROM study s JOIN notes n ON n.id = s.note_id
-     WHERE n.deleted_at IS NULL AND s.due <= ? GROUP BY s.note_id ORDER BY due DESC LIMIT 20`,
+    `SELECT s.note_id AS id, n.title, n.icon, COUNT(*) AS due FROM study s JOIN notes n ON n.owner_id = {owner} AND n.id = s.note_id
+     WHERE s.owner_id = {owner} AND (n.deleted_at IS NULL AND s.due <= ?) GROUP BY s.note_id ORDER BY due DESC LIMIT 20`,
   ).bind(today).all<{ id: string; title: string; icon: string | null; due: number }>();
   return c.json(await Promise.all(r.results.map(async (x) => ({ ...x, title: (await Vault.open("notes", x.id, "title", x.title)) ?? "", icon: await Vault.open("notes", x.id, "icon", x.icon) }))));
 });
@@ -480,7 +491,7 @@ app.post("/api/import", async (c) => c.json(await N.importAll(c.env.DB, await bo
 // The model and web switch the user last picked in the chat, kept in prefs so every device starts from the same choice.
 // "" = the default model.
 const readChoice = async (env: Env) => {
-  const rows = (await env.DB.prepare("SELECT key, value FROM prefs WHERE key IN ('agent_model', 'agent_web')").all<{ key: string; value: string }>()).results;
+  const rows = (await env.DB.prepare("SELECT key, value FROM prefs WHERE owner_id = {owner} AND (key IN ('agent_model', 'agent_web'))").all<{ key: string; value: string }>()).results;
   const get = (k: string) => rows.find((r) => r.key === k)?.value;
   const m = get("agent_model") ?? "";
   return { model: m in MODELS ? m : "", web: get("agent_web") !== "0" };
@@ -492,7 +503,7 @@ app.get("/api/agent/status", async (c) => {
 });
 app.put("/api/agent/choice", async (c) => {
   const b = await body<{ model?: unknown; web?: unknown }>(c);
-  const set = (k: string, v: string) => c.env.DB.prepare("INSERT INTO prefs (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(k, v);
+  const set = (k: string, v: string) => c.env.DB.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ({owner}, ?, ?) ON CONFLICT(owner_id, key) DO UPDATE SET value = excluded.value").bind(k, v);
   const stmts = [];
   if (b.model !== undefined) {
     if (typeof b.model !== "string" || (b.model !== "" && !(b.model in MODELS))) return c.json({ error: "unknown model" }, 400);
@@ -552,7 +563,7 @@ app.get("/api/persona", (c) => c.json({ persona: "waffle" }));
 app.put("/api/persona", async (c) => {
   const p = (await body<{ persona?: unknown }>(c)).persona;
   if (p !== "jeff" && p !== "waffle") return c.json({ error: "persona must be jeff or waffle" }, 400);
-  await c.env.DB.prepare("INSERT INTO prefs (key, value) VALUES ('persona', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(p).run();
+  await c.env.DB.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ({owner}, 'persona', ?) ON CONFLICT(owner_id, key) DO UPDATE SET value = excluded.value").bind(p).run();
   return c.json({ persona: p });
 });
 
@@ -769,7 +780,7 @@ app.get("/api/voice/model/*", async (c) => {
 
 // Files are sealed before they go into R2 (vault.ts) and opened here on the way out.
 async function putFile(env: Env, key: string, data: ArrayBuffer, type: string) {
-  await env.FILES.put(key, await Vault.sealBytes("files", key, "body", new Uint8Array(data)), { httpMetadata: { contentType: type }, customMetadata: { sealed: await Vault.currentKeyId() } });
+  await env.FILES.put(key, await Vault.sealBytes("files", key, "body", new Uint8Array(data)), { httpMetadata: { contentType: type }, customMetadata: { sealed: await Vault.currentKeyId(), owner: ownerOf(env.DB) ?? "" } });
 }
 
 app.get("/files/:id/:name", async (c) => {
@@ -829,7 +840,7 @@ async function linkMentions(db: D1Database, html: string): Promise<string> {
   const tag = /<span\b[^>]*data-type="(?:mention|child-page)"[^>]*>/g;
   const ids = [...new Set([...html.matchAll(tag)].map((m) => /data-id="([0-9a-f-]{36})"/.exec(m[0])?.[1]).filter((x): x is string => !!x))].slice(0, 100);
   if (!ids.length) return html;
-  const rows = (await db.prepare(`SELECT id, share_slug FROM notes WHERE share_slug IS NOT NULL AND deleted_at IS NULL AND id IN (${ids.map(() => "?").join(",")})`).bind(...ids).all<{ id: string; share_slug: string }>()).results;
+  const rows = (await db.prepare(`SELECT id, share_slug FROM notes WHERE owner_id = {owner} AND (share_slug IS NOT NULL AND deleted_at IS NULL AND id IN (${ids.map(() => "?").join(",")}))`).bind(...ids).all<{ id: string; share_slug: string }>()).results;
   const slug = new Map(rows.map((r) => [r.id, r.share_slug]));
   return html.replace(/(<span\b[^>]*data-type="mention"[^>]*>)([\s\S]*?)<\/span>/g, (all, open: string, inner: string) => {
     const id = /data-id="([0-9a-f-]{36})"/.exec(open)?.[1];
@@ -839,6 +850,9 @@ async function linkMentions(db: D1Database, html: string): Promise<string> {
 }
 
 app.get("/p/:slug", async (c) => {
+  const owner = await N.sharedOwner(c.env.DB, c.req.param("slug"));
+  if (owner === null) return c.text("This page is not shared.", 404);
+  c.env = asPerson(c.env, owner);
   const n = await N.getShared(c.env.DB, c.req.param("slug"));
   if (!n) return c.text("This page is not shared.", 404);
   let body = n.html;
@@ -901,7 +915,16 @@ function providerFor(base: string) {
   const resource = `${base}/mcp`;
   provider = new OAuthProvider<Env>({
     apiRoute: "/mcp",
-    apiHandler: { fetch: (request: Request, env: Env, ctx: ExecutionContext) => handleMcp(request, env, ctx) },
+    // An MCP app works for the account that approved it (props.user, authorize.ts). Grants made before accounts were
+    // separate (and the local test token) have none: those belong to the first account.
+    apiHandler: {
+      fetch: async (request: Request, env: Env, ctx: ExecutionContext) => {
+        const user = (ctx as { props?: { user?: unknown } }).props?.user;
+        const owner = typeof user === "string" && user ? user : (await people(env.DB, devOpen(env, request.url)))[0];
+        if (!owner) return new Response("unauthorized", { status: 401 });
+        return handleMcp(request, asPerson(env, owner), ctx);
+      },
+    },
     defaultHandler: { fetch: (request: Request, env: Env, ctx: ExecutionContext) => app.fetch(request, env, ctx) },
     authorizeEndpoint: "/authorize",
     tokenEndpoint: "/oauth/token",
@@ -924,11 +947,13 @@ export default {
       return Response.json({ error: "no_data_key", detail }, { status: 503 });
     }
     const base = (env.PUBLIC_URL || new URL(request.url).origin).replace(/\/+$/, "");
-    return providerFor(base).fetch(request, env, ctx);
+    // Until a request says who it's for, the database is the system's, which can't reach anyone's personal things.
+    return providerFor(base).fetch(request, asSystem(env), ctx);
   },
   // Every minute (see triggers in wrangler.jsonc): task notifications. Once a day, at 04:17 UTC, also drop
   // expired OAuth tokens and grants from KV.
-  async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
+  async scheduled(event: ScheduledController, rawEnv: Env, ctx: ExecutionContext) {
+    const env = asSystem(rawEnv);
     try { await Vault.configure(env); } catch (e) { console.error("no usable DATA_KEY: skipping this run", e instanceof Error ? e.message : e); return; }
     const at = new Date(event.scheduledTime);
     if (at.getUTCHours() === 4 && at.getUTCMinutes() === 17) {
@@ -937,28 +962,36 @@ export default {
       // The change feed keeps 180 days; record how far it was pruned so stale cursors get a clear error.
       const cutoff = event.scheduledTime - 180 * 86_400_000;
       ctx.waitUntil((async () => {
-        const top = await env.DB.prepare("SELECT MAX(seq) AS s FROM changes WHERE created_at < ?").bind(cutoff).first<{ s: number | null }>();
+        // seq is one sequence for everyone, so one cut-off line works for all accounts.
+        const top = await env.DB.prepare("SELECT MAX(seq) AS s FROM changes WHERE created_at < ? /*any-owner*/").bind(cutoff).first<{ s: number | null }>();
         if (!top?.s) return;
         await env.DB.batch([
-          env.DB.prepare("DELETE FROM changes WHERE seq <= ?").bind(top.s),
-          env.DB.prepare("INSERT INTO prefs (key, value) VALUES ('changes_pruned_through', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(String(top.s)),
+          env.DB.prepare("DELETE FROM changes WHERE seq <= ? /*any-owner*/").bind(top.s),
+          env.DB.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ('', 'changes_pruned_through', ?) ON CONFLICT(owner_id, key) DO UPDATE SET value = excluded.value /*any-owner*/").bind(String(top.s)),
         ]);
       })().catch((e) => console.error("feed prune failed", e)));
       ctx.waitUntil(Backup.run(env).then((s) => console.log("backup", s.ok ? s.checked : s.error)));
     } else ctx.waitUntil(Backup.firstRun(env).then((s) => { if (s) console.log("first backup", s.ok ? s.checked : s.error); }).catch((e) => console.error("first backup failed", e)));
     try { const n = await Seal.maybeBackfill(env); if (n) console.log("sealed", n, "stored values"); } catch (e) { console.error("sealing failed", e); }
-    try { await Sem.indexPending(env, 15); } catch (e) { console.error("indexing failed", e); }
-    try {
-      const r = await Push.runReminders(env, event.scheduledTime);
-      if ("sent" in r && r.sent) console.log("reminders", JSON.stringify(r));
-    } catch (e) { console.error("reminders failed", e); }
-    // The proactive assistant: routines due now, and the hourly check-in (which also refreshes the suggestions).
-    // Only when the user has turned proactive mode on (Settings > Routines); the default is on demand only.
-    if (authMode(env) !== "none" && (await Pro.assistantMode(env.DB)) === "proactive") {
-      try { const n = await Pro.dueRoutines(env, event.scheduledTime); if (n) console.log("routines ran", n); } catch (e) { console.error("routines failed", e); }
-      try { const n = await Pro.hourly(env, event.scheduledTime); if (n !== null) console.log("check-in", n, "messages"); } catch (e) { console.error("check-in failed", e); }
-      try { const n = await Tidy.weekly(env, event.scheduledTime); if (n !== null) console.log("tidy-up", n); } catch (e) { console.error("tidy-up failed", e); }
-      try { const n = await Daily.wrapUp(env, event.scheduledTime); if (n) console.log("daily wrap-up"); } catch (e) { console.error("daily wrap-up failed", e); }
-    }
+    // Everything below is one person's: run it for each account, each through their own scope.
+    const everyone = await people(env.DB, rawEnv.AUTH_OPEN === "1").catch(() => [] as string[]);
+    for (const id of everyone) await forPerson(asPerson(env, id), event.scheduledTime);
   },
 } satisfies ExportedHandler<Env>;
+
+/** One person's every-minute work: search indexing, task reminders and, if they turned it on, the proactive assistant. */
+async function forPerson(env: Env, now: number) {
+  try { await Sem.indexPending(env, 15); } catch (e) { console.error("indexing failed", e); }
+  try {
+    const r = await Push.runReminders(env, now);
+    if ("sent" in r && r.sent) console.log("reminders", JSON.stringify(r));
+  } catch (e) { console.error("reminders failed", e); }
+  // The proactive assistant: routines due now, and the hourly check-in (which also refreshes the suggestions).
+  // Only when this person turned proactive mode on (Settings > Routines); the default is on demand only.
+  if (authMode(env) !== "none" && (await Pro.assistantMode(env.DB)) === "proactive") {
+    try { const n = await Pro.dueRoutines(env, now); if (n) console.log("routines ran", n); } catch (e) { console.error("routines failed", e); }
+    try { const n = await Pro.hourly(env, now); if (n !== null) console.log("check-in", n, "messages"); } catch (e) { console.error("check-in failed", e); }
+    try { const n = await Tidy.weekly(env, now); if (n !== null) console.log("tidy-up", n); } catch (e) { console.error("tidy-up failed", e); }
+    try { const n = await Daily.wrapUp(env, now); if (n) console.log("daily wrap-up"); } catch (e) { console.error("daily wrap-up failed", e); }
+  }
+}

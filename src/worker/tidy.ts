@@ -17,7 +17,7 @@ const WEEK_DAY = 0, AT_HOUR = 18; // Sunday, 6 PM local
 
 async function notesWithText(db: D1Database): Promise<TidyNote[]> {
   const tree = (await N.listTree(db)) as unknown as TidyNote[];
-  const rows = (await db.prepare("SELECT id, text FROM notes WHERE deleted_at IS NULL AND kind = 'page' LIMIT 5000").all<{ id: string; text: string | null }>()).results;
+  const rows = (await db.prepare("SELECT id, text FROM notes WHERE owner_id = {owner} AND (deleted_at IS NULL AND kind = 'page') LIMIT 5000").all<{ id: string; text: string | null }>()).results;
   const texts = new Map<string, string>();
   await Promise.all(rows.map(async (r) => texts.set(r.id, (await Vault.open("notes", r.id, "text", r.text)) ?? "")));
   const hidden = await hiddenIds(db); // pages hidden from AI aren't part of a tidy-up at all
@@ -58,7 +58,7 @@ export async function propose(env: Env, now = Date.now()) {
 export async function weekly(env: Env, now = Date.now()) {
   const db = env.DB, tz = await Suggest.userTz(db), l = localNow(now, tz);
   if (new Date(`${l.date}T12:00:00Z`).getUTCDay() !== WEEK_DAY || Number(l.time.slice(0, 2)) !== AT_HOUR) return null;
-  const claim = await db.prepare("INSERT INTO prefs (key, value) VALUES ('tidy_week', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE prefs.value != excluded.value").bind(l.date).run();
+  const claim = await db.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ({owner}, 'tidy_week', ?) ON CONFLICT(owner_id, key) DO UPDATE SET value = excluded.value WHERE prefs.value != excluded.value").bind(l.date).run();
   if (!claim.meta.changes) return null;
   return propose(env, now);
 }

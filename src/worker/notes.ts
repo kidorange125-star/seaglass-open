@@ -105,11 +105,11 @@ const lightCols = (alias = "") => (alias ? LIGHT_COLS.split(",").map((c) => `${a
 const LIGHT = lightCols();
 
 export async function listTree(db: D1Database) {
-  return openNotes((await db.prepare(`SELECT ${LIGHT} FROM notes WHERE deleted_at IS NULL ORDER BY position, created_at LIMIT 5000`).all()).results);
+  return openNotes((await db.prepare(`SELECT ${LIGHT} FROM notes WHERE owner_id = {owner} AND (deleted_at IS NULL) ORDER BY position, created_at LIMIT 5000`).all()).results);
 }
 
 export async function getNote(db: D1Database, id: string, includeDeleted = false) {
-  const sql = `SELECT * FROM notes WHERE id = ?${includeDeleted ? "" : " AND deleted_at IS NULL"}`;
+  const sql = `SELECT * FROM notes WHERE owner_id = {owner} AND (id = ?${includeDeleted ? "" : " AND deleted_at IS NULL"})`;
   return (await openMaybe((await db.prepare(sql).bind(id).first<Note>()) as unknown as Record<string, unknown> | null)) as Note | null;
 }
 
@@ -119,7 +119,7 @@ export async function getNote(db: D1Database, id: string, includeDeleted = false
 export async function searchNotes(db: D1Database, q: string, limit = 30) {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
   if (!words.length) return [];
-  const rows = (await db.prepare(`SELECT ${LIGHT}, text FROM notes WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 5000`).all<Record<string, unknown> & { id: string; title: string; text: string }>()).results;
+  const rows = (await db.prepare(`SELECT ${LIGHT}, text FROM notes WHERE owner_id = {owner} AND (deleted_at IS NULL) ORDER BY updated_at DESC LIMIT 5000`).all<Record<string, unknown> & { id: string; title: string; text: string }>()).results;
   const hits: (Record<string, unknown> & { snippet: string; title_hit: number })[] = [];
   await Promise.all(rows.map(async (r) => {
     const title = ((await Vault.open("notes", r.id, "title", r.title)) ?? "").toLowerCase();
@@ -138,18 +138,18 @@ export async function searchNotes(db: D1Database, q: string, limit = 30) {
 }
 
 export async function recentNotes(db: D1Database, limit = 12) {
-  return openNotes((await db.prepare(`SELECT ${LIGHT} FROM notes WHERE deleted_at IS NULL AND kind='page' ORDER BY updated_at DESC LIMIT ?`).bind(limit).all()).results);
+  return openNotes((await db.prepare(`SELECT ${LIGHT} FROM notes WHERE owner_id = {owner} AND (deleted_at IS NULL AND kind='page') ORDER BY updated_at DESC LIMIT ?`).bind(limit).all()).results);
 }
 
 export async function listChildren(db: D1Database, parentId: string) {
-  return openNotes((await db.prepare("SELECT * FROM notes WHERE parent_id = ? AND deleted_at IS NULL ORDER BY position, created_at").bind(parentId).all<Note>()).results as unknown as Record<string, unknown>[]) as unknown as Promise<Note[]>;
+  return openNotes((await db.prepare("SELECT * FROM notes WHERE owner_id = {owner} AND (parent_id = ? AND deleted_at IS NULL) ORDER BY position, created_at").bind(parentId).all<Note>()).results as unknown as Record<string, unknown>[]) as unknown as Promise<Note[]>;
 }
 
 export async function backlinks(db: D1Database, id: string) {
   return openNotes((
     await db.prepare(
-      `SELECT ${lightCols("n")} FROM links l JOIN notes n ON n.id = l.from_id
-       WHERE l.to_id = ? AND n.deleted_at IS NULL ORDER BY n.updated_at DESC`,
+      `SELECT ${lightCols("n")} FROM links l JOIN notes n ON n.owner_id = {owner} AND n.id = l.from_id
+       WHERE l.owner_id = {owner} AND (l.to_id = ? AND n.deleted_at IS NULL) ORDER BY n.updated_at DESC`,
     ).bind(id).all()
   ).results);
 }
@@ -159,8 +159,8 @@ export async function listTrash(db: D1Database) {
   return openNotes((
     await db.prepare(
       `SELECT ${lightCols("n")}, n.deleted_at FROM notes n
-       LEFT JOIN notes p ON p.id = n.parent_id
-       WHERE n.deleted_at IS NOT NULL AND (p.id IS NULL OR p.deleted_at IS NULL OR p.deleted_at != n.deleted_at)
+       LEFT JOIN notes p ON p.owner_id = {owner} AND p.id = n.parent_id
+       WHERE n.owner_id = {owner} AND (n.deleted_at IS NOT NULL AND (p.id IS NULL OR p.deleted_at IS NULL OR p.deleted_at != n.deleted_at))
        ORDER BY n.deleted_at DESC LIMIT 200`,
     ).all()
   ).results);
@@ -168,7 +168,7 @@ export async function listTrash(db: D1Database) {
 
 async function subtreeIds(db: D1Database, id: string): Promise<string[]> {
   const r = await db.prepare(
-    `WITH RECURSIVE d(id) AS (SELECT ?1 UNION ALL SELECT n.id FROM notes n JOIN d ON n.parent_id = d.id)
+    `WITH RECURSIVE d(id) AS (SELECT ?1 UNION ALL SELECT n.id FROM notes n JOIN d ON n.parent_id = d.id WHERE n.owner_id = {owner})
      SELECT id FROM d`,
   ).bind(id).all<{ id: string }>();
   return r.results.map((x) => x.id);
@@ -196,10 +196,10 @@ function changeStmts(db: D1Database, noteId: string, type: ChangeType, source: s
   const out: D1PreparedStatement[] = [];
   if (type === "edited") {
     out.push(db.prepare(
-      `DELETE FROM changes WHERE seq = (SELECT MAX(seq) FROM changes WHERE note_id = ?1) AND type = 'edited' AND created_at > ?2`,
+      `DELETE FROM changes WHERE owner_id = {owner} AND (seq = (SELECT MAX(seq) FROM changes WHERE owner_id = {owner} AND (note_id = ?1)) AND type = 'edited' AND created_at > ?2)`,
     ).bind(noteId, t - COALESCE_MS));
   }
-  out.push(db.prepare("INSERT INTO changes (note_id, type, source, agent, created_at) VALUES (?, ?, ?, ?, ?)").bind(noteId, type, source, agent, t));
+  out.push(db.prepare("INSERT INTO changes (owner_id, note_id, type, source, agent, created_at) VALUES ({owner}, ?, ?, ?, ?, ?)").bind(noteId, type, source, agent, t));
   return out;
 }
 
@@ -209,15 +209,15 @@ async function logStmts(db: D1Database, ctx: Ctx, tool: string, noteId: string, 
   // Coalesce rapid autosaves by me into one history entry so history stays readable.
   if (ctx.source === "user" && tool === "update") {
     const last = await db.prepare(
-      "SELECT id, source, tool, created_at, undone_at FROM actions WHERE note_id = ? ORDER BY id DESC LIMIT 1",
+      "SELECT id, source, tool, created_at, undone_at FROM actions WHERE owner_id = {owner} AND (note_id = ?) ORDER BY id DESC LIMIT 1",
     ).bind(noteId).first<{ id: number; source: string; tool: string; created_at: number; undone_at: number | null }>();
     if (last && last.source === "user" && last.tool === "update" && !last.undone_at && t - last.created_at < COALESCE_MS) {
-      return [db.prepare("UPDATE actions SET after_json = ?, created_at = ? WHERE id = ?").bind(await Vault.seal("actions", noteId, "after_json", JSON.stringify(after)), t, last.id), ...changeStmts(db, noteId, changeType(before, after), ctx.source, t, ctx.agent ?? null)];
+      return [db.prepare("UPDATE actions SET after_json = ?, created_at = ? WHERE owner_id = {owner} AND (id = ?)").bind(await Vault.seal("actions", noteId, "after_json", JSON.stringify(after)), t, last.id), ...changeStmts(db, noteId, changeType(before, after), ctx.source, t, ctx.agent ?? null)];
     }
   }
   return [
     db.prepare(
-      "INSERT INTO actions (run_id,source,agent,tool,note_id,before_json,after_json,created_at) VALUES (?,?,?,?,?,?,?,?)",
+      "INSERT INTO actions (owner_id, run_id,source,agent,tool,note_id,before_json,after_json,created_at) VALUES ({owner}, ?,?,?,?,?,?,?,?)",
     ).bind(ctx.runId, ctx.source, ctx.agent ?? null, tool, noteId, before ? await Vault.seal("actions", noteId, "before_json", JSON.stringify(before)) : null, after ? await Vault.seal("actions", noteId, "after_json", JSON.stringify(after)) : null, t),
     ...changeStmts(db, noteId, changeType(before, after), ctx.source, t, ctx.agent ?? null),
   ];
@@ -225,8 +225,8 @@ async function logStmts(db: D1Database, ctx: Ctx, tool: string, noteId: string, 
 
 function linkStmts(db: D1Database, id: string, html: string) {
   return [
-    db.prepare("DELETE FROM links WHERE from_id = ?").bind(id),
-    ...extractMentions(html).filter((to) => to !== id).map((to) => db.prepare("INSERT OR IGNORE INTO links (from_id,to_id) VALUES (?,?)").bind(id, to)),
+    db.prepare("DELETE FROM links WHERE owner_id = {owner} AND (from_id = ?)").bind(id),
+    ...extractMentions(html).filter((to) => to !== id).map((to) => db.prepare("INSERT OR IGNORE INTO links (owner_id, from_id,to_id) VALUES ({owner}, ?,?)").bind(id, to)),
   ];
 }
 
@@ -251,7 +251,7 @@ export async function createNote(db: D1Database, input: CreateInput, ctx: Ctx) {
   const html = cleanHtml(input.html ?? tpl?.html ?? "");
   let position = input.position;
   if (position === undefined) {
-    const m = await db.prepare("SELECT COALESCE(MAX(position),0) AS m FROM notes WHERE parent_id IS ?").bind(input.parent_id ?? null).first<{ m: number }>();
+    const m = await db.prepare("SELECT COALESCE(MAX(position),0) AS m FROM notes WHERE owner_id = {owner} AND (parent_id IS ?)").bind(input.parent_id ?? null).first<{ m: number }>();
     position = (m?.m ?? 0) + 1;
   }
   const row = {
@@ -266,8 +266,8 @@ export async function createNote(db: D1Database, input: CreateInput, ctx: Ctx) {
   const sv = await sealedNote(id, { ...row, text: toText(html) });
   await db.batch([
     db.prepare(
-      `INSERT INTO notes (id,parent_id,kind,title,html,text,icon,cover,favorite,position,full_width,small_text,font,locked,is_template,props,db_schema,meta,system,dated,revision,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,0,?,?,?,?,0,?,?,?,?,?,?,1,?,?)`,
+      `INSERT INTO notes (owner_id, id,parent_id,kind,title,html,text,icon,cover,favorite,position,full_width,small_text,font,locked,is_template,props,db_schema,meta,system,dated,revision,created_at,updated_at)
+       VALUES ({owner}, ?,?,?,?,?,?,?,?,0,?,?,?,?,0,?,?,?,?,?,?,1,?,?)`,
     ).bind(id, row.parent_id, row.kind, sv.title, sv.html, sv.text, sv.icon, sv.cover, row.position, row.full_width, row.small_text, row.font, row.is_template, sv.props, sv.db_schema, sv.meta, systemOf(row.kind, row.db_schema), datedOf(row.props), t, t),
     ...linkStmts(db, id, html),
     ...log,
@@ -324,7 +324,7 @@ export async function patchNote(db: D1Database, id: string, patch: Patch, ctx: C
   const [upd] = await db.batch([
     db.prepare(
       `UPDATE notes SET parent_id=?,kind=?,title=?,html=?,text=?,icon=?,cover=?,favorite=?,position=?,full_width=?,small_text=?,font=?,locked=?,is_template=?,props=?,db_schema=?,meta=?,system=?,dated=?,deleted_at=?,
-              revision=revision+1, updated_at=? WHERE id=? AND revision=?`,
+              revision=revision+1, updated_at=? WHERE owner_id = {owner} AND (id=? AND revision=?)`,
     ).bind(next.parent_id, next.kind, sv.title, sv.html, sv.text, sv.icon, sv.cover, next.favorite, next.position, next.full_width, next.small_text, next.font, next.locked, next.is_template, sv.props, sv.db_schema, sv.meta, systemOf(next.kind, next.db_schema), datedOf(next.props), next.deleted_at, t, id, before.revision),
     ...(next.html !== before.html ? linkStmts(db, id, next.html) : []),
     ...log,
@@ -340,11 +340,11 @@ export async function trashNote(db: D1Database, id: string, ctx: Ctx) {
   if (root.locked) throw new LockedError();
   const t = now();
   const ids = await subtreeIds(db, id);
-  const rows = (await openNotes((await db.prepare(`SELECT * FROM notes WHERE id IN (${ids.map(() => "?").join(",")}) AND deleted_at IS NULL`).bind(...ids).all<Note>()).results as unknown as Record<string, unknown>[])) as unknown as Note[];
+  const rows = (await openNotes((await db.prepare(`SELECT * FROM notes WHERE owner_id = {owner} AND (id IN (${ids.map(() => "?").join(",")}) AND deleted_at IS NULL)`).bind(...ids).all<Note>()).results as unknown as Record<string, unknown>[])) as unknown as Note[];
   const stmts: D1PreparedStatement[] = [];
   for (const n of rows) {
     const after = { ...snap(n), deleted_at: t, favorite: 0 };
-    stmts.push(db.prepare("UPDATE notes SET deleted_at=?, revision=revision+1, updated_at=?, share_slug=NULL, favorite=0 WHERE id=?").bind(t, t, n.id));
+    stmts.push(db.prepare("UPDATE notes SET deleted_at=?, revision=revision+1, updated_at=?, share_slug=NULL, favorite=0 WHERE owner_id = {owner} AND (id=?)").bind(t, t, n.id));
     stmts.push(...(await logStmts(db, ctx, "delete", n.id, snap(n), after, t)));
   }
   await db.batch(stmts);
@@ -357,7 +357,7 @@ export async function restoreNote(db: D1Database, id: string, ctx: Ctx) {
   await guardAi(db, ctx, id);
   const stamp = root.deleted_at;
   const ids = await subtreeIds(db, id);
-  const rows = (await openNotes((await db.prepare(`SELECT * FROM notes WHERE id IN (${ids.map(() => "?").join(",")}) AND deleted_at = ?`).bind(...ids, stamp).all<Note>()).results as unknown as Record<string, unknown>[])) as unknown as Note[];
+  const rows = (await openNotes((await db.prepare(`SELECT * FROM notes WHERE owner_id = {owner} AND (id IN (${ids.map(() => "?").join(",")}) AND deleted_at = ?)`).bind(...ids, stamp).all<Note>()).results as unknown as Record<string, unknown>[])) as unknown as Note[];
   const t = now();
   // If the old parent is gone or still in the trash, bring the page back at the top level.
   let parent_id = root.parent_id;
@@ -365,7 +365,7 @@ export async function restoreNote(db: D1Database, id: string, ctx: Ctx) {
   const stmts: D1PreparedStatement[] = [];
   for (const n of rows) {
     const after = { ...snap(n), deleted_at: null, parent_id: n.id === id ? parent_id : n.parent_id };
-    stmts.push(db.prepare("UPDATE notes SET deleted_at=NULL, parent_id=?, revision=revision+1, updated_at=? WHERE id=?").bind(after.parent_id, t, n.id));
+    stmts.push(db.prepare("UPDATE notes SET deleted_at=NULL, parent_id=?, revision=revision+1, updated_at=? WHERE owner_id = {owner} AND (id=?)").bind(after.parent_id, t, n.id));
     stmts.push(...(await logStmts(db, ctx, "restore", n.id, snap(n), after, t)));
   }
   await db.batch(stmts);
@@ -378,10 +378,10 @@ export async function purgeNote(db: D1Database, id: string) {
   const ids = await subtreeIds(db, id);
   const ph = ids.map(() => "?").join(",");
   await db.batch([
-    db.prepare(`DELETE FROM notes WHERE id IN (${ph})`).bind(...ids),
-    db.prepare(`DELETE FROM links WHERE from_id IN (${ph}) OR to_id IN (${ph})`).bind(...ids, ...ids),
-    db.prepare(`DELETE FROM comments WHERE note_id IN (${ph})`).bind(...ids),
-    db.prepare(`DELETE FROM actions WHERE note_id IN (${ph})`).bind(...ids),
+    db.prepare(`DELETE FROM notes WHERE owner_id = {owner} AND (id IN (${ph}))`).bind(...ids),
+    db.prepare(`DELETE FROM links WHERE owner_id = {owner} AND (from_id IN (${ph}) OR to_id IN (${ph}))`).bind(...ids, ...ids),
+    db.prepare(`DELETE FROM comments WHERE owner_id = {owner} AND (note_id IN (${ph}))`).bind(...ids),
+    db.prepare(`DELETE FROM actions WHERE owner_id = {owner} AND (note_id IN (${ph}))`).bind(...ids),
     ...ids.flatMap((x) => changeStmts(db, x, "deleted", "user", now())),
   ]);
   return true;
@@ -398,7 +398,7 @@ export async function duplicateNote(db: D1Database, id: string, ctx: Ctx) {
   if (!root) return null;
   await guardAi(db, ctx, id);
   const ids = await subtreeIds(db, id);
-  const rows = (await openNotes((await db.prepare(`SELECT * FROM notes WHERE id IN (${ids.map(() => "?").join(",")}) AND deleted_at IS NULL`).bind(...ids).all<Note>()).results as unknown as Record<string, unknown>[])) as unknown as Note[];
+  const rows = (await openNotes((await db.prepare(`SELECT * FROM notes WHERE owner_id = {owner} AND (id IN (${ids.map(() => "?").join(",")}) AND deleted_at IS NULL)`).bind(...ids).all<Note>()).results as unknown as Record<string, unknown>[])) as unknown as Note[];
   const map = new Map(rows.map((r) => [r.id, crypto.randomUUID()]));
   const byDepth = [...rows].sort((a, b) => Number(a.id !== id) - Number(b.id !== id));
   for (const n of byDepth) {
@@ -418,7 +418,7 @@ export async function duplicateNote(db: D1Database, id: string, ctx: Ctx) {
 export async function hiddenForAi(db: D1Database): Promise<HiddenSet> {
   const ids: HiddenSet = await hiddenIds(db);
   if (!ids.size) return ids;
-  const rows = (await db.prepare(`SELECT l.from_id, n.id, n.title FROM links l JOIN notes n ON n.id = l.to_id WHERE l.to_id IN (${HIDDEN_SQL})`).all<{ from_id: string; id: string; title: string | null }>()).results;
+  const rows = (await db.prepare(`SELECT l.from_id, n.id, n.title FROM links l JOIN notes n ON n.owner_id = {owner} AND n.id = l.to_id WHERE l.owner_id = {owner} AND (l.to_id IN (${HIDDEN_SQL}))`).all<{ from_id: string; id: string; title: string | null }>()).results;
   const titles = new Map<string, string[]>();
   for (const r of rows) {
     const t = ((await Vault.open("notes", r.id, "title", r.title)) ?? "").trim();
@@ -432,10 +432,10 @@ export async function hiddenForAi(db: D1Database): Promise<HiddenSet> {
 /** Turns "Hide from AI" on or off. Only the app's own routes call this: Waffle and MCP can never change it.
  *  Bumps updated_at (so other devices pick it up) but not revision (so open editors don't see a conflict). */
 export async function setAiHidden(db: D1Database, id: string, hidden: boolean) {
-  const r = await db.prepare("UPDATE notes SET ai_hidden = ?, updated_at = ? WHERE id = ?").bind(flag(hidden), now(), id).run();
+  const r = await db.prepare("UPDATE notes SET ai_hidden = ?, updated_at = ? WHERE owner_id = {owner} AND (id = ?)").bind(flag(hidden), now(), id).run();
   if (!r.meta.changes) return null;
   // Drop its search vectors (and its sub-pages'), so semantic search can't surface it.
-  if (hidden) await db.prepare(`DELETE FROM embeddings WHERE note_id IN (WITH RECURSIVE d(id) AS (SELECT ?1 UNION ALL SELECT n.id FROM notes n JOIN d ON n.parent_id = d.id) SELECT id FROM d)`).bind(id).run();
+  if (hidden) await db.prepare(`DELETE FROM embeddings WHERE owner_id = {owner} AND (note_id IN (WITH RECURSIVE d(id) AS (SELECT ?1 UNION ALL SELECT n.id FROM notes n JOIN d ON n.parent_id = d.id WHERE n.owner_id = {owner}) SELECT id FROM d))`).bind(id).run();
   return getNote(db, id, true);
 }
 
@@ -444,13 +444,13 @@ export async function setAiHidden(db: D1Database, id: string, hidden: boolean) {
 export async function listHistory(db: D1Database, id: string) {
   return (
     await db.prepare(
-      `SELECT id, run_id, source, agent, tool, created_at, undone_at FROM actions WHERE note_id = ? ORDER BY id DESC LIMIT 100`,
+      `SELECT id, run_id, source, agent, tool, created_at, undone_at FROM actions WHERE owner_id = {owner} AND (note_id = ?) ORDER BY id DESC LIMIT 100`,
     ).bind(id).all()
   ).results;
 }
 
 export async function getVersion(db: D1Database, id: string, actionId: number) {
-  const row = await db.prepare("SELECT after_json, created_at FROM actions WHERE id = ? AND note_id = ?").bind(actionId, id).first<{ after_json: string | null; created_at: number }>();
+  const row = await db.prepare("SELECT after_json, created_at FROM actions WHERE owner_id = {owner} AND (id = ? AND note_id = ?)").bind(actionId, id).first<{ after_json: string | null; created_at: number }>();
   return row?.after_json ? { snapshot: JSON.parse((await Vault.open("actions", id, "after_json", row.after_json))!) as Snap, created_at: row.created_at } : null;
 }
 
@@ -467,12 +467,15 @@ export async function setShare(db: D1Database, id: string, enabled: boolean) {
   const n = await getNote(db, id);
   if (!n) return null;
   const slug = enabled ? n.share_slug ?? crypto.randomUUID().replace(/-/g, "").slice(0, 14) : null;
-  await db.prepare("UPDATE notes SET share_slug = ? WHERE id = ?").bind(slug, id).run();
+  await db.prepare("UPDATE notes SET share_slug = ? WHERE owner_id = {owner} AND (id = ?)").bind(slug, id).run();
   return { share_slug: slug };
 }
 
+/** Whose shared page this is (system database): the public page is then read through that person's scope. */
+export const sharedOwner = async (sys: D1Database, slug: string) =>
+  (await sys.prepare("SELECT owner_id FROM notes WHERE share_slug = ? AND deleted_at IS NULL /*any-owner*/").bind(slug).first<{ owner_id: string }>())?.owner_id ?? null;
 export const getShared = async (db: D1Database, slug: string) =>
-  (await openMaybe((await db.prepare("SELECT * FROM notes WHERE share_slug = ? AND deleted_at IS NULL").bind(slug).first<Note>()) as unknown as Record<string, unknown> | null)) as Note | null;
+  (await openMaybe((await db.prepare("SELECT * FROM notes WHERE owner_id = {owner} AND (share_slug = ? AND deleted_at IS NULL)").bind(slug).first<Note>()) as unknown as Record<string, unknown> | null)) as Note | null;
 
 // Comments, on a page or on specific words (#22: anchor = {quote, nth}, client comments.ts), and suggested edits from the
 // assistant (kind "suggestion": the words to change are the anchor's quote, replace_with the new text). A suggestion changes
@@ -492,7 +495,7 @@ async function openComment(r: CommentRow) {
   return { ...r, body: (await Vault.open("comments", r.id, "body", r.body)) ?? "", anchor, replace_with: await Vault.open("comments", r.id, "replace_with", r.replace_with) };
 }
 export async function listComments(db: D1Database, id: string) {
-  const rows = (await db.prepare("SELECT * FROM comments WHERE note_id = ? ORDER BY created_at").bind(id).all<CommentRow>()).results;
+  const rows = (await db.prepare("SELECT * FROM comments WHERE owner_id = {owner} AND (note_id = ?) ORDER BY created_at").bind(id).all<CommentRow>()).results;
   return Promise.all(rows.map(openComment));
 }
 export async function addComment(db: D1Database, id: string, body: string, o: { anchor?: unknown; kind?: "comment" | "suggestion"; author?: Source; replace?: string } = {}) {
@@ -502,7 +505,7 @@ export async function addComment(db: D1Database, id: string, body: string, o: { 
   if (kind === "comment" && !c.body.trim()) throw new BadRequest("empty comment");
   if (kind === "suggestion" && !anchor) throw new BadRequest("a suggestion needs the words it changes");
   if (o.anchor !== undefined && o.anchor !== null && !anchor) throw new BadRequest("bad anchor");
-  await db.prepare("INSERT INTO comments (id,note_id,body,resolved,created_at,kind,author,anchor,replace_with) VALUES (?,?,?,0,?,?,?,?,?)").bind(
+  await db.prepare("INSERT INTO comments (owner_id, id,note_id,body,resolved,created_at,kind,author,anchor,replace_with) VALUES ({owner}, ?,?,?,0,?,?,?,?,?)").bind(
     c.id, c.note_id, await Vault.seal("comments", c.id, "body", c.body), c.created_at, kind, c.author,
     anchor ? await Vault.seal("comments", c.id, "anchor", JSON.stringify(anchor)) : null,
     c.replace_with === null ? null : await Vault.seal("comments", c.id, "replace_with", c.replace_with),
@@ -510,15 +513,15 @@ export async function addComment(db: D1Database, id: string, body: string, o: { 
   return c;
 }
 export const resolveComment = (db: D1Database, cid: string, resolved: boolean, outcome?: unknown) =>
-  db.prepare("UPDATE comments SET resolved = ?, outcome = ? WHERE id = ?").bind(flag(resolved), resolved && (outcome === "accepted" || outcome === "rejected") ? outcome : null, cid).run();
-export const deleteComment = (db: D1Database, cid: string) => db.prepare("DELETE FROM comments WHERE id = ?").bind(cid).run();
+  db.prepare("UPDATE comments SET resolved = ?, outcome = ? WHERE owner_id = {owner} AND (id = ?)").bind(flag(resolved), resolved && (outcome === "accepted" || outcome === "rejected") ? outcome : null, cid).run();
+export const deleteComment = (db: D1Database, cid: string) => db.prepare("DELETE FROM comments WHERE owner_id = {owner} AND (id = ?)").bind(cid).run();
 
 // ---------------------------------------------------------------- backup
 
 export async function exportAll(db: D1Database) {
   // The export file is plaintext by design (it's your own backup, downloaded over your signed-in session).
-  const notes = await openNotes((await db.prepare("SELECT * FROM notes").all()).results);
-  const comments = await Promise.all((await db.prepare("SELECT * FROM comments").all<CommentRow>()).results.map(openComment));
+  const notes = await openNotes((await db.prepare("SELECT * FROM notes WHERE owner_id = {owner}").all()).results);
+  const comments = await Promise.all((await db.prepare("SELECT * FROM comments WHERE owner_id = {owner}").all<CommentRow>()).results.map(openComment));
   return { app: "seaglass", version: 1, exported_at: now(), notes, comments };
 }
 
@@ -527,7 +530,7 @@ export async function importAll(db: D1Database, data: { notes?: Note[]; comments
   for (let i = 0; i < notes.length; i += 40) {
     const chunk = notes.slice(i, i + 40);
     const ids = chunk.map((n) => n.id);
-    const existing = new Set((await db.prepare(`SELECT id FROM notes WHERE id IN (${ids.map(() => "?").join(",")})`).bind(...ids).all<{ id: string }>()).results.map((r) => r.id));
+    const existing = new Set((await db.prepare(`SELECT id FROM notes WHERE owner_id = {owner} AND (id IN (${ids.map(() => "?").join(",")}))`).bind(...ids).all<{ id: string }>()).results.map((r) => r.id));
     const t = now();
     const sealed = await Promise.all(chunk.map((n) => { const html = cleanHtml(n.html ?? ""); return sealedNote(n.id, { title: clip(n.title, 300), html, text: toText(html), icon: n.icon ?? null, cover: n.cover ?? null, props: n.props || "{}", db_schema: n.db_schema ?? null, meta: cleanMeta(n.meta) }); }));
     await db.batch(chunk.flatMap((n, i) => {
@@ -535,8 +538,8 @@ export async function importAll(db: D1Database, data: { notes?: Note[]; comments
       const sv = sealed[i];
       return [
         db.prepare(
-          `INSERT OR REPLACE INTO notes (id,parent_id,kind,title,html,text,icon,cover,favorite,position,full_width,small_text,font,locked,is_template,props,db_schema,meta,system,dated,share_slug,revision,created_at,updated_at,deleted_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,?,?,?)`,
+          `INSERT OR REPLACE INTO notes (owner_id, id,parent_id,kind,title,html,text,icon,cover,favorite,position,full_width,small_text,font,locked,is_template,props,db_schema,meta,system,dated,share_slug,revision,created_at,updated_at,deleted_at)
+           VALUES ({owner}, ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,?,?,?)`,
         ).bind(n.id, n.parent_id ?? null, n.kind ?? "page", sv.title, sv.html, sv.text, sv.icon, sv.cover, flag(n.favorite), Number(n.position) || 0, flag(n.full_width), flag(n.small_text), FONTS.has(n.font) ? n.font : "sans", flag(n.locked), flag(n.is_template), sv.props, sv.db_schema, sv.meta, systemOf(n.kind ?? "page", n.db_schema ?? null), datedOf(n.props || "{}"), (n.revision ?? 1) + 1, n.created_at ?? now(), n.updated_at ?? now(), n.deleted_at ?? null),
         ...linkStmts(db, n.id, html),
         ...changeStmts(db, n.id, existing.has(n.id) ? "edited" : "created", "user", t),
@@ -545,7 +548,7 @@ export async function importAll(db: D1Database, data: { notes?: Note[]; comments
   }
   for (const c of data.comments ?? []) {
     const cid = String(c.id), anchor = cleanAnchor(c.anchor), kind = c.kind === "suggestion" && anchor ? "suggestion" : "comment";
-    await db.prepare("INSERT OR REPLACE INTO comments (id,note_id,body,resolved,created_at,kind,author,anchor,replace_with,outcome) VALUES (?,?,?,?,?,?,?,?,?,?)")
+    await db.prepare("INSERT OR REPLACE INTO comments (owner_id, id,note_id,body,resolved,created_at,kind,author,anchor,replace_with,outcome) VALUES ({owner}, ?,?,?,?,?,?,?,?,?,?)")
       .bind(cid, String(c.note_id), await Vault.seal("comments", cid, "body", clip(c.body, 4000)), flag(c.resolved), Number(c.created_at) || now(), kind,
         c.author === "agent" || c.author === "mcp" ? c.author : "user", anchor ? await Vault.seal("comments", cid, "anchor", JSON.stringify(anchor)) : null,
         kind === "suggestion" ? await Vault.seal("comments", cid, "replace_with", clip(c.replace_with, 4000)) : null, c.outcome === "accepted" || c.outcome === "rejected" ? c.outcome : null).run();
@@ -577,10 +580,10 @@ async function writeSnapshot(db: D1Database, id: string, next: Snap, ctx: Ctx, t
   await db.batch([
     db.prepare(
       `UPDATE notes SET parent_id=?,kind=?,title=?,html=?,text=?,icon=?,cover=?,favorite=?,position=?,full_width=?,small_text=?,font=?,locked=?,is_template=?,props=?,db_schema=?,meta=?,system=?,dated=?,deleted_at=?,
-              revision=revision+1, updated_at=? WHERE id=?`,
+              revision=revision+1, updated_at=? WHERE owner_id = {owner} AND (id=?)`,
     ).bind(next.parent_id, next.kind, sv.title, sv.html, sv.text, sv.icon, sv.cover, next.favorite, next.position, next.full_width, next.small_text, next.font, next.locked, next.is_template, sv.props, sv.db_schema, sv.meta, systemOf(next.kind, next.db_schema), datedOf(next.props), next.deleted_at, t, id),
     ...(htmlChanged ? linkStmts(db, id, next.html) : []),
-    db.prepare("INSERT INTO actions (run_id,source,agent,tool,note_id,before_json,after_json,created_at) VALUES (?,?,?,?,?,?,?,?)")
+    db.prepare("INSERT INTO actions (owner_id, run_id,source,agent,tool,note_id,before_json,after_json,created_at) VALUES ({owner}, ?,?,?,?,?,?,?,?)")
       .bind(ctx.runId, ctx.source, ctx.agent ?? null, tool, id, await Vault.seal("actions", id, "before_json", JSON.stringify(snap(cur))), await Vault.seal("actions", id, "after_json", JSON.stringify(next)), t),
     ...changeStmts(db, id, changeType(snap(cur), next), ctx.source, t, ctx.agent ?? null),
   ]);
@@ -593,13 +596,13 @@ export async function listRuns(db: D1Database, limit = 20, hidden?: Set<string>)
     await db.prepare(
       `SELECT run_id, MIN(source) AS source, MIN(created_at) AS started_at, COUNT(*) AS n,
               SUM(CASE WHEN undone_at IS NOT NULL THEN 1 ELSE 0 END) AS undone
-       FROM actions WHERE source IN ${AGENT_SOURCES} GROUP BY run_id ORDER BY MAX(id) DESC LIMIT ?`,
+       FROM actions WHERE owner_id = {owner} AND (source IN ${AGENT_SOURCES}) GROUP BY run_id ORDER BY MAX(id) DESC LIMIT ?`,
     ).bind(limit).all<{ run_id: string; source: string; started_at: number; n: number; undone: number }>()
   ).results;
   // The page titles live inside the sealed snapshots, so the summaries are built here.
   const summaries = new Map<string, string[]>(), agents = new Map<string, string[]>();
   if (rows.length) {
-    const acts = (await db.prepare(`SELECT id, run_id, agent, tool, note_id, before_json, after_json FROM actions WHERE run_id IN (${rows.map(() => "?").join(",")}) ORDER BY id`).bind(...rows.map((r) => r.run_id)).all<ActionRow>()).results;
+    const acts = (await db.prepare(`SELECT id, run_id, agent, tool, note_id, before_json, after_json FROM actions WHERE owner_id = {owner} AND (run_id IN (${rows.map(() => "?").join(",")})) ORDER BY id`).bind(...rows.map((r) => r.run_id)).all<ActionRow>()).results;
     for (const a of acts) {
       const o = await openAction(a);
       const title = (o.after_json ? (JSON.parse(o.after_json) as { title?: string }).title : undefined) ?? (o.before_json ? (JSON.parse(o.before_json) as { title?: string }).title : undefined) ?? "";
@@ -615,14 +618,14 @@ export async function listRuns(db: D1Database, limit = 20, hidden?: Set<string>)
 export async function runTouchesHidden(db: D1Database, runId: string) {
   const hidden = await hiddenIds(db);
   if (!hidden.size) return false;
-  const ids = (await db.prepare("SELECT DISTINCT note_id FROM actions WHERE run_id = ?").bind(runId).all<{ note_id: string }>()).results;
+  const ids = (await db.prepare("SELECT DISTINCT note_id FROM actions WHERE owner_id = {owner} AND (run_id = ?)").bind(runId).all<{ note_id: string }>()).results;
   return ids.some((r) => hidden.has(r.note_id));
 }
 
 export type RunResult = { ok: true; run_id: string; changed: number } | { ok: false; error: string; conflicts?: { id: string; title: string }[] };
 
 export async function undoRun(db: D1Database, runId: string, opts: { force?: boolean; agent?: string } = {}): Promise<RunResult> {
-  const acts = await Promise.all((await db.prepare(`SELECT * FROM actions WHERE run_id = ? AND undone_at IS NULL AND source IN ${AGENT_SOURCES} ORDER BY id DESC`).bind(runId).all<ActionRow>()).results.map(openAction));
+  const acts = await Promise.all((await db.prepare(`SELECT * FROM actions WHERE owner_id = {owner} AND (run_id = ? AND undone_at IS NULL AND source IN ${AGENT_SOURCES}) ORDER BY id DESC`).bind(runId).all<ActionRow>()).results.map(openAction));
   if (!acts.length) return { ok: false, error: "Nothing to undo for that run." };
 
   const conflicts: { id: string; title: string }[] = [];
@@ -648,12 +651,12 @@ export async function undoRun(db: D1Database, runId: string, opts: { force?: boo
     const target: Snap = a.before_json ? (JSON.parse(a.before_json) as Snap) : { ...snap(cur), deleted_at: cur.deleted_at ?? now(), favorite: 0 };
     if (await writeSnapshot(db, a.note_id, target, ctx, "undo")) changed++;
   }
-  await db.prepare(`UPDATE actions SET undone_at = ? WHERE run_id = ? AND undone_at IS NULL AND source IN ${AGENT_SOURCES}`).bind(now(), runId).run();
+  await db.prepare(`UPDATE actions SET undone_at = ? WHERE owner_id = {owner} AND (run_id = ? AND undone_at IS NULL AND source IN ${AGENT_SOURCES})`).bind(now(), runId).run();
   return { ok: true, run_id: runId, changed };
 }
 
 export async function redoRun(db: D1Database, runId: string, opts: { force?: boolean; agent?: string } = {}): Promise<RunResult> {
-  const acts = await Promise.all((await db.prepare(`SELECT * FROM actions WHERE run_id = ? AND undone_at IS NOT NULL AND source IN ${AGENT_SOURCES} ORDER BY id ASC`).bind(runId).all<ActionRow>()).results.map(openAction));
+  const acts = await Promise.all((await db.prepare(`SELECT * FROM actions WHERE owner_id = {owner} AND (run_id = ? AND undone_at IS NOT NULL AND source IN ${AGENT_SOURCES}) ORDER BY id ASC`).bind(runId).all<ActionRow>()).results.map(openAction));
   if (!acts.length) return { ok: false, error: "Nothing to redo for that run." };
 
   const conflicts: { id: string; title: string }[] = [];
@@ -675,20 +678,20 @@ export async function redoRun(db: D1Database, runId: string, opts: { force?: boo
     if (skip.has(a.note_id) && !opts.force) continue;
     if (a.after_json && (await writeSnapshot(db, a.note_id, JSON.parse(a.after_json) as Snap, ctx, "redo"))) changed++;
   }
-  await db.prepare(`UPDATE actions SET undone_at = NULL WHERE run_id = ? AND undone_at IS NOT NULL AND source IN ${AGENT_SOURCES}`).bind(runId).run();
+  await db.prepare(`UPDATE actions SET undone_at = NULL WHERE owner_id = {owner} AND (run_id = ? AND undone_at IS NOT NULL AND source IN ${AGENT_SOURCES})`).bind(runId).run();
   return { ok: true, run_id: runId, changed };
 }
 
 /** The most recent run that still has applied changes (what "/undo" targets). */
 export async function latestUndoable(db: D1Database, source?: "agent" | "mcp") {
   const only = source ? ` AND source = '${source === "mcp" ? "mcp" : "agent"}'` : "";
-  const r = await db.prepare(`SELECT run_id FROM actions WHERE source IN ${AGENT_SOURCES}${only} AND undone_at IS NULL ORDER BY id DESC LIMIT 1`).first<{ run_id: string }>();
+  const r = await db.prepare(`SELECT run_id FROM actions WHERE owner_id = {owner} AND (source IN ${AGENT_SOURCES}${only} AND undone_at IS NULL) ORDER BY id DESC LIMIT 1`).first<{ run_id: string }>();
   return r?.run_id ?? null;
 }
 /** The most recently undone run (what "/redo" targets). */
 export async function latestRedoable(db: D1Database, source?: "agent" | "mcp") {
   const only = source ? ` AND source = '${source === "mcp" ? "mcp" : "agent"}'` : "";
-  const r = await db.prepare(`SELECT run_id FROM actions WHERE source IN ${AGENT_SOURCES}${only} AND undone_at IS NOT NULL ORDER BY undone_at DESC, id DESC LIMIT 1`).first<{ run_id: string }>();
+  const r = await db.prepare(`SELECT run_id FROM actions WHERE owner_id = {owner} AND (source IN ${AGENT_SOURCES}${only} AND undone_at IS NOT NULL) ORDER BY undone_at DESC, id DESC LIMIT 1`).first<{ run_id: string }>();
   return r?.run_id ?? null;
 }
 
@@ -723,7 +726,7 @@ export async function setMeta(db: D1Database, id: string, patch: Record<string, 
   if (Object.keys(next).length > 32) throw new BadRequest("metadata can have at most 32 keys");
   const s = JSON.stringify(next);
   if (s.length > META_MAX_CHARS) throw new BadRequest(`metadata is limited to ${META_MAX_CHARS} characters of JSON`);
-  await db.prepare("UPDATE notes SET meta = ? WHERE id = ?").bind(await sealCol(id, "meta", s), id).run();
+  await db.prepare("UPDATE notes SET meta = ? WHERE owner_id = {owner} AND (id = ?)").bind(await sealCol(id, "meta", s), id).run();
   return next;
 }
 
@@ -736,8 +739,8 @@ export async function homeData(db: D1Database) {
   const recent = await Promise.all((
     await db.prepare(
       `SELECT n.id, n.title, n.icon, n.kind, n.cover, n.parent_id, n.updated_at, p.title AS parent_title, p.icon AS parent_icon
-       FROM notes n LEFT JOIN notes p ON p.id = n.parent_id
-       WHERE n.deleted_at IS NULL AND n.is_template = 0 AND (p.id IS NULL OR p.kind != 'database')
+       FROM notes n LEFT JOIN notes p ON p.owner_id = {owner} AND p.id = n.parent_id
+       WHERE n.owner_id = {owner} AND (n.deleted_at IS NULL AND n.is_template = 0 AND (p.id IS NULL OR p.kind != 'database'))
        ORDER BY n.updated_at DESC LIMIT 9`,
     ).all<RecentRow>()
   ).results.map(async (r) => ({
@@ -750,8 +753,8 @@ export async function homeData(db: D1Database) {
   const rows = await Promise.all((
     await db.prepare(
       `SELECT n.id, n.title, n.icon, n.props, p.id AS db_id, p.title AS db_title, p.icon AS db_icon, p.db_schema
-       FROM notes n JOIN notes p ON p.id = n.parent_id
-       WHERE n.deleted_at IS NULL AND p.deleted_at IS NULL AND p.kind = 'database' AND n.is_template = 0 AND n.dated = 1
+       FROM notes n JOIN notes p ON p.owner_id = {owner} AND p.id = n.parent_id
+       WHERE n.owner_id = {owner} AND (n.deleted_at IS NULL AND p.deleted_at IS NULL AND p.kind = 'database' AND n.is_template = 0 AND n.dated = 1)
        LIMIT 800`,
     ).all<DatedRow>()
   ).results.map(async (r): Promise<DatedRow> => ({
@@ -827,7 +830,7 @@ export const TASKS_SCHEMA = {
 
 /** `today` is the user's local date (YYYY-MM-DD); the Worker runs in UTC, so it can't know it. */
 export async function ensureTasksDb(db: D1Database, ctx: Ctx, today?: string) {
-  const found = await db.prepare(`SELECT id, deleted_at FROM notes WHERE kind = 'database' AND system = 'tasks' ORDER BY created_at LIMIT 1`)
+  const found = await db.prepare(`SELECT id, deleted_at FROM notes WHERE owner_id = {owner} AND (kind = 'database' AND system = 'tasks') ORDER BY created_at LIMIT 1`)
     .first<{ id: string; deleted_at: number | null }>();
   if (found) {
     // Lists made before a property existed get it added once (today: Repeat).
@@ -871,7 +874,7 @@ export const EVENTS_SCHEMA = {
 };
 
 export async function ensureEventsDb(db: D1Database, ctx: Ctx) {
-  const found = await db.prepare(`SELECT id, deleted_at FROM notes WHERE kind = 'database' AND system = 'events' ORDER BY created_at LIMIT 1`)
+  const found = await db.prepare(`SELECT id, deleted_at FROM notes WHERE owner_id = {owner} AND (kind = 'database' AND system = 'events') ORDER BY created_at LIMIT 1`)
     .first<{ id: string; deleted_at: number | null }>();
   if (found) return { id: found.id, created: false, trashed: found.deleted_at !== null };
   const cal = await createNote(db, { kind: "database", title: "Calendar", icon: "📅", db_schema: EVENTS_SCHEMA, html: "" }, ctx);
@@ -905,7 +908,7 @@ export const GRADES_SCHEMA = {
 };
 
 export async function ensureGradesDb(db: D1Database, ctx: Ctx) {
-  const found = await db.prepare(`SELECT id, deleted_at FROM notes WHERE kind = 'database' AND system = 'grades' ORDER BY created_at LIMIT 1`)
+  const found = await db.prepare(`SELECT id, deleted_at FROM notes WHERE owner_id = {owner} AND (kind = 'database' AND system = 'grades') ORDER BY created_at LIMIT 1`)
     .first<{ id: string; deleted_at: number | null }>();
   if (found) return { id: found.id, created: false, trashed: found.deleted_at !== null };
   const list = await createNote(db, { kind: "database", title: "Grades", icon: "🎓", db_schema: GRADES_SCHEMA, html: "" }, ctx);

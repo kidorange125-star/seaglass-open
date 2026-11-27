@@ -29,8 +29,8 @@ export const WINDOW_MAX = 40;
 const COMPACT_AFTER = 10;           // fold into the summary once this many messages have slid out of the window
 const SUMMARY_MODEL = "claude-haiku-5-5";
 
-const getPref = async (db: D1Database, k: string) => (await db.prepare("SELECT value FROM prefs WHERE key = ?").bind(k).first<{ value: string }>())?.value ?? null;
-const setPref = (db: D1Database, k: string, v: string) => db.prepare("INSERT INTO prefs (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(k, v).run();
+const getPref = async (db: D1Database, k: string) => (await db.prepare("SELECT value FROM prefs WHERE owner_id = {owner} AND (key = ?)").bind(k).first<{ value: string }>())?.value ?? null;
+const setPref = (db: D1Database, k: string, v: string) => db.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ({owner}, ?, ?) ON CONFLICT(owner_id, key) DO UPDATE SET value = excluded.value").bind(k, v).run();
 
 async function open(r: Row): Promise<ThreadMessage> {
   const meta = await Vault.open("thread", r.id, "meta", r.meta);
@@ -41,7 +41,7 @@ async function open(r: Row): Promise<ThreadMessage> {
 
 export async function add(db: D1Database, msg: { role: Role; kind?: Kind; text: string; meta?: ThreadMeta; at?: number }) {
   const id = crypto.randomUUID(), t = msg.at ?? Date.now();
-  const r = await db.prepare("INSERT INTO thread (id, role, kind, text, meta, created_at) VALUES (?,?,?,?,?,?)").bind(
+  const r = await db.prepare("INSERT INTO thread (owner_id, id, role, kind, text, meta, created_at) VALUES ({owner}, ?,?,?,?,?,?)").bind(
     id, msg.role, msg.kind ?? (msg.role === "divider" ? "divider" : "chat"),
     await Vault.seal("thread", id, "text", msg.text.slice(0, 100_000)),
     msg.meta && Object.keys(msg.meta).length ? await Vault.seal("thread", id, "meta", JSON.stringify(msg.meta)) : null, t,
@@ -51,10 +51,10 @@ export async function add(db: D1Database, msg: { role: Role; kind?: Kind; text: 
 
 /** Merges into a message's metadata (e.g. undone after Undo). */
 export async function patchMeta(db: D1Database, id: string, patch: ThreadMeta) {
-  const r = await db.prepare("SELECT * FROM thread WHERE id = ?").bind(id).first<Row>();
+  const r = await db.prepare("SELECT * FROM thread WHERE owner_id = {owner} AND (id = ?)").bind(id).first<Row>();
   if (!r) return false;
   const cur = await open(r);
-  await db.prepare("UPDATE thread SET meta = ? WHERE id = ?").bind(await Vault.seal("thread", id, "meta", JSON.stringify({ ...cur.meta, ...patch })), id).run();
+  await db.prepare("UPDATE thread SET meta = ? WHERE owner_id = {owner} AND (id = ?)").bind(await Vault.seal("thread", id, "meta", JSON.stringify({ ...cur.meta, ...patch })), id).run();
   return true;
 }
 
@@ -62,20 +62,20 @@ export async function patchMeta(db: D1Database, id: string, patch: ThreadMeta) {
 export async function list(db: D1Database, opts: { before?: number; after?: number; limit?: number } = {}) {
   const lim = Math.min(200, Math.max(1, opts.limit ?? 60));
   let rows: Row[];
-  if (opts.after !== undefined) rows = (await db.prepare("SELECT * FROM thread WHERE seq > ? ORDER BY seq LIMIT ?").bind(opts.after, lim).all<Row>()).results;
+  if (opts.after !== undefined) rows = (await db.prepare("SELECT * FROM thread WHERE owner_id = {owner} AND (seq > ?) ORDER BY seq LIMIT ?").bind(opts.after, lim).all<Row>()).results;
   else {
-    rows = (await db.prepare(`SELECT * FROM thread ${opts.before !== undefined ? "WHERE seq < ?" : ""} ORDER BY seq DESC LIMIT ?`).bind(...(opts.before !== undefined ? [opts.before, lim] : [lim])).all<Row>()).results;
+    rows = (await db.prepare(`SELECT * FROM thread WHERE owner_id = {owner}${opts.before !== undefined ? " AND seq < ?" : ""} ORDER BY seq DESC LIMIT ?`).bind(...(opts.before !== undefined ? [opts.before, lim] : [lim])).all<Row>()).results;
     rows.reverse();
   }
   return Promise.all(rows.map(open));
 }
-export const lastSeq = async (db: D1Database) => (await db.prepare("SELECT COALESCE(MAX(seq), 0) AS s FROM thread").first<{ s: number }>())?.s ?? 0;
+export const lastSeq = async (db: D1Database) => (await db.prepare("SELECT COALESCE(MAX(seq), 0) AS s FROM thread WHERE owner_id = {owner}").first<{ s: number }>())?.s ?? 0;
 
 // ---------------------------------------------------------------- unread (the badge)
 /** Messages the assistant sent on its own (check-ins, routines) since the user last looked. */
 export async function unread(db: D1Database) {
   const read = Number(await getPref(db, "thread_read")) || 0;
-  return (await db.prepare("SELECT COUNT(*) AS n FROM thread WHERE seq > ? AND kind IN ('proactive','routine')").bind(read).first<{ n: number }>())?.n ?? 0;
+  return (await db.prepare("SELECT COUNT(*) AS n FROM thread WHERE owner_id = {owner} AND (seq > ? AND kind IN ('proactive','routine'))").bind(read).first<{ n: number }>())?.n ?? 0;
 }
 export async function markRead(db: D1Database, seq: number) {
   const read = Number(await getPref(db, "thread_read")) || 0;
@@ -101,9 +101,9 @@ export interface Context { history: { role: "user" | "assistant"; content: strin
 
 /** The recent window (after the last new-topic break) as alternating user/assistant turns, plus the rolling summary. */
 export async function context(db: D1Database, tz: string, opts: { beforeSeq?: number; afterSeq?: number } = {}): Promise<Context> {
-  const lastBreak = (await db.prepare(`SELECT COALESCE(MAX(seq), 0) AS s FROM thread WHERE role = 'divider' ${opts.beforeSeq ? "AND seq < ?" : ""}`).bind(...(opts.beforeSeq ? [opts.beforeSeq] : [])).first<{ s: number }>())?.s ?? 0;
+  const lastBreak = (await db.prepare(`SELECT COALESCE(MAX(seq), 0) AS s FROM thread WHERE owner_id = {owner} AND (role = 'divider' ${opts.beforeSeq ? "AND seq < ?" : ""})`).bind(...(opts.beforeSeq ? [opts.beforeSeq] : [])).first<{ s: number }>())?.s ?? 0;
   const divider = Math.max(lastBreak, opts.afterSeq ?? 0); // a Study chat sees only itself, plus the summary
-  const rows = (await db.prepare(`SELECT * FROM thread WHERE seq > ? ${opts.beforeSeq ? "AND seq < ?" : ""} AND role != 'divider' ORDER BY seq DESC LIMIT ?`).bind(divider, ...(opts.beforeSeq ? [opts.beforeSeq] : []), WINDOW_MAX).all<Row>()).results;
+  const rows = (await db.prepare(`SELECT * FROM thread WHERE owner_id = {owner} AND (seq > ? ${opts.beforeSeq ? "AND seq < ?" : ""} AND role != 'divider') ORDER BY seq DESC LIMIT ?`).bind(divider, ...(opts.beforeSeq ? [opts.beforeSeq] : []), WINDOW_MAX).all<Row>()).results;
   const picked: ThreadMessage[] = [];
   let used = 0;
   for (const r of rows) {
@@ -136,7 +136,7 @@ export async function compact(env: Env, tz: string, force = false) {
   let prev: { text: string; through: number } = { text: "", through: 0 };
   if (raw) { try { prev = JSON.parse((await Vault.open("prefs", "thread_summary", "value", raw)) ?? "{}"); } catch { /* start over */ } }
   const { windowStart } = await context(db, tz);
-  const waiting = (await db.prepare("SELECT * FROM thread WHERE seq > ? AND seq < ? AND role != 'divider' ORDER BY seq LIMIT 400").bind(prev.through || 0, windowStart).all<Row>()).results;
+  const waiting = (await db.prepare("SELECT * FROM thread WHERE owner_id = {owner} AND (seq > ? AND seq < ? AND role != 'divider') ORDER BY seq LIMIT 400").bind(prev.through || 0, windowStart).all<Row>()).results;
   if (!waiting.length || (!force && waiting.length < COMPACT_AFTER)) return false;
   const msgs = await Promise.all(waiting.map(open));
   const transcript = msgs.map((m) => `${m.role === "user" ? "The user" : "Assistant"} ${asContext(m, tz).slice(0, 1500)}`).join("\n");
@@ -152,7 +152,7 @@ export async function compact(env: Env, tz: string, force = false) {
 export async function search(db: D1Database, query: string, tz: string, opts: { beforeSeq?: number; limit?: number } = {}) {
   const words = query.toLowerCase().split(/\s+/).filter((w) => w.length > 1).slice(0, 6);
   if (!words.length) return [];
-  const rows = (await db.prepare(`SELECT * FROM thread WHERE role != 'divider' ${opts.beforeSeq ? "AND seq < ?" : ""} ORDER BY seq DESC LIMIT 3000`).bind(...(opts.beforeSeq ? [opts.beforeSeq] : [])).all<Row>()).results;
+  const rows = (await db.prepare(`SELECT * FROM thread WHERE owner_id = {owner} AND (role != 'divider' ${opts.beforeSeq ? "AND seq < ?" : ""}) ORDER BY seq DESC LIMIT 3000`).bind(...(opts.beforeSeq ? [opts.beforeSeq] : [])).all<Row>()).results;
   const out: { when: string; who: string; excerpt: string }[] = [];
   for (const r of rows) {
     if (out.length >= (opts.limit ?? 8)) break;
@@ -173,8 +173,8 @@ export async function importOldChats(db: D1Database) {
   // Old chats and anything the assistant had already said on its own (inbox items from before the thread), in time order.
   type Item = { at: number; chat?: { id: string; title: string; messages: string }; inbox?: { id: string; source: string; title: string; body: string; urgent: number } };
   const items: Item[] = [];
-  for (const c of (await db.prepare("SELECT id, title, messages, updated_at FROM chats").all<{ id: string; title: string; messages: string; updated_at: number }>()).results) items.push({ at: c.updated_at, chat: c });
-  for (const i of (await db.prepare("SELECT id, source, title, body, urgent, created_at FROM inbox").all<{ id: string; source: string; title: string; body: string; urgent: number; created_at: number }>()).results) items.push({ at: i.created_at, inbox: i });
+  for (const c of (await db.prepare("SELECT id, title, messages, updated_at FROM chats WHERE owner_id = {owner}").all<{ id: string; title: string; messages: string; updated_at: number }>()).results) items.push({ at: c.updated_at, chat: c });
+  for (const i of (await db.prepare("SELECT id, source, title, body, urgent, created_at FROM inbox WHERE owner_id = {owner}").all<{ id: string; source: string; title: string; body: string; urgent: number; created_at: number }>()).results) items.push({ at: i.created_at, inbox: i });
   items.sort((x, y) => x.at - y.at);
   let n = 0;
   for (const it of items) {

@@ -36,6 +36,15 @@ not hidden in the interface. (Whoever holds `DATA_KEY` can still read the whole 
   and every assistant and MCP tool with A's ids, then the cron. The marker must never appear and A's data must not change.
 - Adding members stays off (`POST /api/household/members` answers 501) until both pass.
 
+## Where it stands
+
+- Done: `owner_id` on every personal table (0023), every query scoped (`check:scope` is 0), the scoped and system
+  databases (`scope.ts`), and every way in: signed-in requests, the quick-capture key (its owner), public shared pages
+  (the page's owner), MCP (the approving account, `props.user`), and the cron (each account in turn; backups, sealing,
+  OAuth clean-up and the feed prune stay system-wide). Uploaded files record their owner in R2 metadata. API suites pass.
+- Next: invites and roles (backups and household settings owner-only), the Vault owner backstop, clearing device storage
+  on sign-in, file reads checked against their owner, then the canary crawl.
+
 ## In 0.2
 
 Private data per person, invites (link or code), owner and adult roles, removing a member. Later: a shared Family space,

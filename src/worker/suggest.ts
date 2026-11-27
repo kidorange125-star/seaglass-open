@@ -6,14 +6,14 @@ import { hiddenIds } from "./hidden";
 import * as M from "./memory";
 import { isTimeZone, localNow } from "./reminders";
 
-const getPref = async (db: D1Database, k: string) => (await db.prepare("SELECT value FROM prefs WHERE key = ?").bind(k).first<{ value: string }>())?.value ?? null;
-const setPref = (db: D1Database, k: string, v: string) => db.prepare("INSERT INTO prefs (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(k, v).run();
+const getPref = async (db: D1Database, k: string) => (await db.prepare("SELECT value FROM prefs WHERE owner_id = {owner} AND (key = ?)").bind(k).first<{ value: string }>())?.value ?? null;
+const setPref = (db: D1Database, k: string, v: string) => db.prepare("INSERT INTO prefs (owner_id, key, value) VALUES ({owner}, ?, ?) ON CONFLICT(owner_id, key) DO UPDATE SET value = excluded.value").bind(k, v).run();
 
 /** the user's time zone: the one the app last reported, else a notification device's, else UTC. */
 export async function userTz(db: D1Database): Promise<string> {
   const tz = await getPref(db, "tz");
   if (tz && isTimeZone(tz)) return tz;
-  const sub = await db.prepare("SELECT tz FROM push_subs ORDER BY seen_at DESC LIMIT 1").first<{ tz: string }>();
+  const sub = await db.prepare("SELECT tz FROM push_subs WHERE owner_id = {owner} ORDER BY seen_at DESC LIMIT 1").first<{ tz: string }>();
   return sub?.tz && isTimeZone(sub.tz) ? sub.tz : "UTC";
 }
 export async function rememberTz(db: D1Database, tz: unknown) {
@@ -45,7 +45,7 @@ export async function context(db: D1Database, now: number, tz: string): Promise<
   });
   // Open tasks without a date (dated ones are already in `upcoming`).
   const undated: string[] = [];
-  const tasks = await db.prepare("SELECT id FROM notes WHERE kind = 'database' AND system = 'tasks' AND deleted_at IS NULL LIMIT 1").first<{ id: string }>();
+  const tasks = await db.prepare("SELECT id FROM notes WHERE owner_id = {owner} AND (kind = 'database' AND system = 'tasks' AND deleted_at IS NULL) LIMIT 1").first<{ id: string }>();
   if (tasks) {
     for (const r of await N.listChildren(db, tasks.id)) {
       if (r.is_template || (r as N.Note & { dated?: number }).dated || hidden.has(r.id)) continue;
@@ -54,7 +54,7 @@ export async function context(db: D1Database, now: number, tz: string): Promise<
     }
   }
   const recent = ((await N.recentNotes(db, 8)) as { id: string; title: string; updated_at: number }[]).filter((r) => !hidden.has(r.id)).map((r) => `- "${r.title || "Untitled"}" (edited ${localNow(r.updated_at, tz).date})`);
-  const cards = (await db.prepare("SELECT COUNT(*) AS n FROM study s JOIN notes n ON n.id = s.note_id WHERE n.deleted_at IS NULL AND s.due <= ?").bind(l.date).first<{ n: number }>())?.n ?? 0;
+  const cards = (await db.prepare("SELECT COUNT(*) AS n FROM study s JOIN notes n ON n.owner_id = {owner} AND n.id = s.note_id WHERE s.owner_id = {owner} AND (n.deleted_at IS NULL AND s.due <= ?)").bind(l.date).first<{ n: number }>())?.n ?? 0;
   const mems = (await M.listMemories(db, 25)).map((m) => `- ${m.text}`);
   return [
     `Now: ${weekday} ${l.date}, ${l.time} (${tz}).`,

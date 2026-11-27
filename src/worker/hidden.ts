@@ -16,7 +16,7 @@ export class HiddenError extends Error {
 
 /** SQL for every hidden page id: pages with the flag and everything beneath them, trashed or not.
  *  Use it as a subquery: `n.id NOT IN (${HIDDEN_SQL})`. */
-export const HIDDEN_SQL = "WITH RECURSIVE hid(id) AS (SELECT id FROM notes WHERE ai_hidden = 1 UNION SELECT n.id FROM notes n JOIN hid ON n.parent_id = hid.id) SELECT id FROM hid";
+export const HIDDEN_SQL = "WITH RECURSIVE hid(id) AS (SELECT id FROM notes WHERE owner_id = {owner} AND (ai_hidden = 1) UNION SELECT n.id FROM notes n JOIN hid ON n.parent_id = hid.id WHERE n.owner_id = {owner}) SELECT id FROM hid";
 
 export async function hiddenIds(db: D1Database): Promise<Set<string>> {
   const rows = (await db.prepare(HIDDEN_SQL).all<{ id: string }>()).results;
