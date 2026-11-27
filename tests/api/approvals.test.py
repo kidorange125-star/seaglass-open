@@ -33,7 +33,9 @@ def run(message, answer=None):
 titles = lambda: [n["title"] for n in call("GET", "/api/tree")[1]]
 
 s, p = call("GET", "/api/agent/permissions")
-check("a new copy asks before changes", p["permissions"]["add"] == "ask" and p["permissions"]["delete"] == "ask", p)
+careful = p["presets"]["careful"]
+check("the careful preset asks before changes", careful["add"] == "ask" and careful["delete"] == "ask", careful)
+call("PUT", "/api/agent/permissions", careful)
 
 ev = run("mock:create Approved Page", True)
 ask = [e for e in ev if e["type"] == "approval"]

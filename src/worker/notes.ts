@@ -382,8 +382,6 @@ export async function purgeNote(db: D1Database, id: string) {
     db.prepare(`DELETE FROM links WHERE from_id IN (${ph}) OR to_id IN (${ph})`).bind(...ids, ...ids),
     db.prepare(`DELETE FROM comments WHERE note_id IN (${ph})`).bind(...ids),
     db.prepare(`DELETE FROM actions WHERE note_id IN (${ph})`).bind(...ids),
-    db.prepare(`DELETE FROM paper_requests WHERE note_id IN (${ph})`).bind(...ids),
-    db.prepare(`DELETE FROM paper_grants WHERE note_id IN (${ph})`).bind(...ids),
     ...ids.flatMap((x) => changeStmts(db, x, "deleted", "user", now())),
   ]);
   return true;

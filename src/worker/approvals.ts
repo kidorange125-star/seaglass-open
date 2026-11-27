@@ -27,16 +27,20 @@ const TOOL_KIND: Record<string, Kind> = {
 };
 export const kindOf = (tool: string): Kind | null => TOOL_KIND[tool] ?? null;
 
-export async function permissions(db: D1Database): Promise<Permissions> {
+/** The settings, or the copy's starting point: DEFAULT_AGENT_PERMISSIONS (careful, balanced or free), else careful. */
+export const startingPoint = (env: { DEFAULT_AGENT_PERMISSIONS?: string }): Permissions =>
+  PRESETS[(env.DEFAULT_AGENT_PERMISSIONS ?? "") as keyof typeof PRESETS] ?? DEFAULT;
+
+export async function permissions(db: D1Database, base: Permissions = DEFAULT): Promise<Permissions> {
   const v = (await db.prepare("SELECT value FROM prefs WHERE key = 'agent_permissions'").first<{ value: string }>())?.value;
   try {
     const p = JSON.parse(v ?? "{}") as Partial<Permissions>;
-    return Object.fromEntries(KINDS.map((k) => [k, p[k] === "allow" || p[k] === "ask" || p[k] === "never" ? p[k] : DEFAULT[k]])) as Permissions;
-  } catch { return { ...DEFAULT }; }
+    return Object.fromEntries(KINDS.map((k) => [k, p[k] === "allow" || p[k] === "ask" || p[k] === "never" ? p[k] : base[k]])) as Permissions;
+  } catch { return { ...base }; }
 }
 
-export async function savePermissions(db: D1Database, raw: unknown) {
-  const cur = await permissions(db), b = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+export async function savePermissions(db: D1Database, raw: unknown, base: Permissions = DEFAULT) {
+  const cur = await permissions(db, base), b = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const next = Object.fromEntries(KINDS.map((k) => [k, b[k] === "allow" || b[k] === "ask" || b[k] === "never" ? b[k] : cur[k]])) as Permissions;
   if (next.web === "ask") next.web = "allow"; // can't pause a search that runs on Claude's side
   await db.prepare("INSERT INTO prefs (key, value) VALUES ('agent_permissions', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(JSON.stringify(next)).run();

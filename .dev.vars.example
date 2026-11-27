@@ -8,6 +8,7 @@ PUBLIC_URL=
 # ANTHROPIC_API_KEY=sk-ant-...
 # Only for the automated test suites: skip sign-in on localhost. Never set this on a deployed copy (it's ignored there).
 # AUTH_OPEN=1
+# DEFAULT_AGENT_PERMISSIONS=free            # the test suites expect this (the assistant acts without asking)
 # Task notifications (Web Push). Generate with: npm run push:keygen
 # VAPID_PRIVATE_KEY='{"kty":"EC",...}'
 # Workload identity federation can't be tested fully on localhost (the Claude API must reach your issuer over public HTTPS):

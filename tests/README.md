@@ -57,9 +57,9 @@ Start the server with `npm run dev`. The `.dev.vars` mode matters:
 
 | Suite | `.dev.vars` | Checks |
 |---|---|---|
-| `python tests/api/api.test.py` | `ANTHROPIC_API_KEY=mock` and `AUTH_OPEN=1` | 37: pages, trash, history, sharing, uploads, sanitizer, locks |
-| `python tests/api/agent.test.py` | `ANTHROPIC_API_KEY=mock` and `AUTH_OPEN=1` | 36: Waffle's tools, streaming, undo/redo, conflicts, locks |
-| `python tests/api/mcp.test.py` | `ANTHROPIC_API_KEY=mock`, `AUTH_OPEN=1` and `PUBLIC_URL=` (blank); its OAuth sign-in part still sends the old access token and needs updating for accounts | MCP protocol, full OAuth flow, anti-CSRF, undo, study details |
+| `python tests/api/api.test.py` | `ANTHROPIC_API_KEY=mock` and `AUTH_OPEN=1` and `DEFAULT_AGENT_PERMISSIONS=free` | 37: pages, trash, history, sharing, uploads, sanitizer, locks |
+| `python tests/api/agent.test.py` | `ANTHROPIC_API_KEY=mock` and `AUTH_OPEN=1` and `DEFAULT_AGENT_PERMISSIONS=free` | 36: Waffle's tools, streaming, undo/redo, conflicts, locks |
+| `python tests/api/mcp.test.py` | `ANTHROPIC_API_KEY=mock`, `AUTH_OPEN=1` and `DEFAULT_AGENT_PERMISSIONS=free` and `PUBLIC_URL=` (blank); its OAuth sign-in part still sends the old access token and needs updating for accounts | MCP protocol, full OAuth flow, anti-CSRF, undo, study details |
 | `python tests/api/capture.test.py` | same as mcp | 33: capture key and endpoint, Inbox and task parsing, transcription, search by meaning, the Waffle/MCP tool |
 | `python tests/api/sync.test.py` | same as mcp | 64: sync over MCP: timestamps (MCP, app and Waffle edits), change feed and cursors, content hash, trash, metadata, safe writes, read_notes, paging, create_database |
 | `python tests/api/hidden.test.py` | same as mcp | 35: Hide from AI: MCP and Waffle can't read, search, list, write, link to or undo hidden pages (or their sub-pages); mentions blanked; AI routes refuse; only the app can toggle it |
@@ -73,7 +73,7 @@ npm i -D playwright
 npx playwright install chromium
 ```
 
-Run with `.dev.vars` = `ANTHROPIC_API_KEY=mock` and `AUTH_OPEN=1`. Each prints its checks; an optional
+Run with `.dev.vars` = `ANTHROPIC_API_KEY=mock` and `AUTH_OPEN=1` and `DEFAULT_AGENT_PERMISSIONS=free`. Each prints its checks; an optional
 argument is a folder for screenshots.
 
 | Script | Covers |

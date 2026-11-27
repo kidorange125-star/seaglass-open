@@ -158,16 +158,29 @@ function Shell() {
 
 export function App() {
   // What to show first: the setup screen (a new copy), sign-in, or the app.
-  const [view, setView] = useState<"loading" | "setup" | "signin" | "app">("loading");
+  const [view, setView] = useState<"loading" | "setup" | "signin" | "app" | "nokey">("loading");
   const [codeRequired, setCodeRequired] = useState(true);
   const [noTables, setNoTables] = useState(false);
   const check = () => api.session().then((r) => {
     if (r.setup) { setCodeRequired(!!r.code_required); setNoTables(!!r.no_tables); setView("setup"); }
     else { setMe(r.user); setView(r.authed ? "app" : "signin"); }
-  }).catch((e) => setView(isNetworkError(e) ? "app" : "signin")); // offline: carry on with what's cached (an API 401 later still shows sign-in)
+  }).catch((e) => {
+    if (e instanceof ApiError && e.status === 503 && e.message === "no_data_key") setView("nokey");
+    else setView(isNetworkError(e) ? "app" : "signin"); // offline: carry on with what's cached (an API 401 later still shows sign-in)
+  });
   useEffect(() => { setUnauthorizedHandler(() => setView("signin")); void check(); }, []);
-  useEffect(() => { if (view === "setup" || view === "signin") bootDone(); }, [view]);
+  useEffect(() => { if (view === "setup" || view === "signin" || view === "nokey") bootDone(); }, [view]);
   if (view === "loading") return null;
+  if (view === "nokey") return (
+    <div className="login welcome setup">
+      <div className="brand"><Logo size={44} /> Seaglass</div>
+      <h1>One more secret to set</h1>
+      <p>Seaglass encrypts everything before it's stored, and it needs its key, <code>DATA_KEY</code>, to do that. On your computer, in the Seaglass folder, run:</p>
+      <pre className="w-cmd">npm run data:keygen -- --out data-key.txt --put</pre>
+      <p>Save the key from <code>data-key.txt</code> in your password manager (losing it loses every note), delete the file, then reload this page. docs/SETUP.md has the details.</p>
+      <button className="primary" onClick={() => location.reload()}>Reload</button>
+    </div>
+  );
   if (view === "setup") return <Onboarding codeRequired={codeRequired} noTables={noTables} onDone={() => void check()} />;
   if (view === "signin") return <SignIn onDone={() => void check()} />;
   return <StoreProvider><Shell /></StoreProvider>;

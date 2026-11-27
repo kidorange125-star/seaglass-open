@@ -13,6 +13,8 @@ export interface Env {
   SETUP_CODE?: string;
   /** Local test suites only: "1" skips sign-in on localhost (auth.ts devOpen). Never set it on a deployed copy. */
   AUTH_OPEN?: string;
+  /** Where a new copy's assistant permissions start: careful (ask before changes, the default), balanced or free. */
+  DEFAULT_AGENT_PERMISSIONS?: string;
   /** Public origin of the deployed Worker, e.g. https://seaglass.example.workers.dev (no trailing slash). */
   PUBLIC_URL?: string;
   /** Claude API: either an API key (or "mock"), or workload identity federation below. */

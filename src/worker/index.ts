@@ -542,8 +542,8 @@ app.get("/api/setup", async (c) => {
 
 // Which assistant the app shows: Waffle (default) or Waffle. Only the name and picture change; the agent uses the name too.
 // What the assistant may do on its own, and the answers to its questions (approvals.ts).
-app.get("/api/agent/permissions", async (c) => c.json({ permissions: await Approvals.permissions(c.env.DB), presets: Approvals.PRESETS }));
-app.put("/api/agent/permissions", async (c) => c.json({ permissions: await Approvals.savePermissions(c.env.DB, await body(c)) }));
+app.get("/api/agent/permissions", async (c) => c.json({ permissions: await Approvals.permissions(c.env.DB, Approvals.startingPoint(c.env)), presets: Approvals.PRESETS }));
+app.put("/api/agent/permissions", async (c) => c.json({ permissions: await Approvals.savePermissions(c.env.DB, await body(c), Approvals.startingPoint(c.env)) }));
 app.post("/api/agent/approvals/:id", async (c) => {
   const ok = (await body<{ ok?: unknown }>(c)).ok === true;
   return (await Approvals.decide(c.env.DB, c.req.param("id"), ok)) ? c.json({ ok: true }) : c.json({ error: "That question was already answered or has expired." }, 410);

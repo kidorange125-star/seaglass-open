@@ -803,7 +803,7 @@ export async function runAgent(env: Env, p: AgentParams, send: (e: AgentEvent) =
   const PRICE = MODELS[model].price, SPEED_COST = p.fast ? 2 : 1;
   // The user can pick Waffle instead of Waffle in Settings: same assistant and tools, Waffle's name and its own few lines (persona.ts).
   const persona = (await env.DB.prepare("SELECT value FROM prefs WHERE key = 'persona'").first<{ value: string }>())?.value;
-  const call = mode === "mock" ? mockModel() : realModel(claudeClient(env), model, p.web !== false && !p.quick && (await Approvals.permissions(env.DB)).web !== "never", systemFor(SYSTEM, persona), { voice: p.voice, fast: p.fast, quick: p.quick });
+  const call = mode === "mock" ? mockModel() : realModel(claudeClient(env), model, p.web !== false && !p.quick && (await Approvals.permissions(env.DB, Approvals.startingPoint(env))).web !== "never", systemFor(SYSTEM, persona), { voice: p.voice, fast: p.fast, quick: p.quick });
   // Which agent this is, on every change it makes: "Waffle (Sonnet 5.5)", "Waffle (Haiku 5.5, live voice)"… (identity.ts)
   const agent = agentLabel(persona, [`${modelName(model)}${p.fast ? " Fast" : ""}`, p.via, p.voice && "live voice", p.handoff && "for live voice", p.quick && "Ctrl+K", !!p.study?.ids.length && "Study chat"]);
   const ctx: ToolCtx = { source: "agent", runId: p.run_id, agent, chatId: p.chat_id ?? null, threadBefore: p.thread_before ?? null, tz: p.tz };
@@ -815,7 +815,7 @@ export async function runAgent(env: Env, p: AgentParams, send: (e: AgentEvent) =
   // Who you're talking with (their account's name), so prompts written about "The user" can be personal.
   const who = await ownerName(env.DB).catch(() => "");
   if (who) context += ` You're talking with ${who.replace(/[<>\s]+/g, " ").trim()}.`;
-  const perms = await Approvals.permissions(env.DB);
+  const perms = await Approvals.permissions(env.DB, Approvals.startingPoint(env));
   context += Approvals.permissionNote(perms);
   if (p.page_id && UUID.test(p.page_id)) {
     const cur = await N.getNote(env.DB, p.page_id);
