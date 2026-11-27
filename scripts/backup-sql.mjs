@@ -60,7 +60,24 @@ export function toSql(dump, { max = MAX_STATEMENT, clear = ["embeddings"] } = {}
     }
     flush();
   }
+  if (beforeOwners(dump)) out.push(...ownerBackfill(dump));
   return out.join("\n") + "\n";
+}
+
+// Seaglass Open 0.2 gave every personal row an owner (migration 0023). A backup made before that has none, so after
+// restoring it into a 0.2 database its rows go to the first account, exactly as the migration did; the household-wide
+// settings stay shared. Keep this list in step with src/worker/scope.ts PERSONAL.
+const PERSONAL = ["notes", "actions", "links", "comments", "changes", "study", "memories", "chats", "push_subs", "push_sent",
+  "push_snooze", "prefs", "embeddings", "inbox", "prompts", "routines", "thread", "study_subjects", "study_pages", "study_sets",
+  "study_sessions", "study_exams", "study_exam_pages", "study_misses", "agent_approvals"];
+const SHARED_PREFS = ["household", "backup_status", "vault_sealed_kid", "changes_pruned_through"];
+/** True for a backup made before rows had owners. */
+export const beforeOwners = (dump) => PERSONAL.some((t) => Array.isArray(dump.tables?.[t]) && dump.tables[t].length > 0 && !("owner_id" in dump.tables[t][0]));
+function ownerBackfill(dump) {
+  const first = "COALESCE((SELECT id FROM users ORDER BY created_at LIMIT 1), '')";
+  return PERSONAL.filter((t) => t in dump.tables).map((t) => t === "prefs"
+    ? `UPDATE prefs SET owner_id = ${first} WHERE owner_id = '' AND key NOT IN (${SHARED_PREFS.map(sqlValue).join(", ")});`
+    : `UPDATE ${ident(t)} SET owner_id = ${first} WHERE owner_id = '';`);
 }
 
 /** How many rows of each table the file holds (to compare with what the backup said). */

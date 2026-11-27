@@ -63,3 +63,12 @@ CREATE TABLE prefs_new (owner_id TEXT NOT NULL DEFAULT '', key TEXT NOT NULL, va
 INSERT INTO prefs_new (owner_id, key, value) SELECT CASE WHEN key IN ('household', 'backup_status', 'vault_sealed_kid', 'changes_pruned_through') THEN '' ELSE COALESCE((SELECT id FROM users ORDER BY created_at LIMIT 1), '') END, key, value FROM prefs;
 DROP TABLE prefs;
 ALTER TABLE prefs_new RENAME TO prefs;
+
+-- Keys that were unique across the whole copy become unique per person: a reminder's sent-marker ("d|<day>|<time zone>"
+-- for the daily summary would otherwise let only the first person in a time zone get theirs), and a saved prompt's name.
+CREATE TABLE push_sent_new (owner_id TEXT NOT NULL DEFAULT '', key TEXT NOT NULL, sent_at INTEGER NOT NULL, PRIMARY KEY (owner_id, key));
+INSERT INTO push_sent_new (owner_id, key, sent_at) SELECT owner_id, key, sent_at FROM push_sent;
+DROP TABLE push_sent;
+ALTER TABLE push_sent_new RENAME TO push_sent;
+DROP INDEX IF EXISTS prompts_name;
+CREATE UNIQUE INDEX prompts_owner_name ON prompts (owner_id, name);

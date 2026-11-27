@@ -945,6 +945,9 @@ function providerFor(base: string) {
         const user = (ctx as { props?: { user?: unknown } }).props?.user;
         const owner = typeof user === "string" && user ? user : devOpen(env, request.url) ? (await people(env.DB, true))[0] : undefined;
         if (!owner) return new Response("unauthorized", { status: 401 });
+        // An app keeps working only while its account exists (removing a member also revokes their apps; this covers
+        // a revoke that failed).
+        if (owner !== "dev" && !(await env.DB.prepare("SELECT 1 FROM users WHERE id = ?").bind(owner).first())) return new Response("unauthorized", { status: 401 });
         return handleMcp(request, asPerson(env, owner), ctx);
       },
     },

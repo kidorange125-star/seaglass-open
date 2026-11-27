@@ -155,7 +155,7 @@ export function SetupWizard({ codeRequired, noTables = false, initialMode, onDon
               <b>Just me</b><small>Your own notes, tasks and studying.</small>
             </button>
             <button type="button" role="radio" aria-checked={mode === "household"} className={mode === "household" ? "on" : ""} onClick={() => setMode("household")}>
-              <b>My household</b><small>You set it up; family members get their own accounts in a coming update.</small>
+              <b>My household</b><small>You set it up, then invite family members. Each gets their own private account.</small>
             </button>
           </div>
           <p className="w-note">You can change this later in Settings.</p>

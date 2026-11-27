@@ -32,6 +32,11 @@ const huge = "é'; DROP ".repeat(30_000); // 270,000 characters with quotes, sem
 const pieces = statements(toSql({ ...dump, tables: { actions: [{ id: "h", before_json: huge, after_json: "small" }] } }));
 eq("an oversized row: insert with it empty, then pieces", [pieces.filter((s) => s.startsWith("INSERT")).length, pieces.filter((s) => s.startsWith("UPDATE")).length > 20], [1, true]);
 eq("pieces fit too", Math.max(...pieces.map((s) => Buffer.byteLength(s))) <= MAX_STATEMENT, true);
-const rebuilt = pieces.filter((s) => s.startsWith("UPDATE")).map((s) => /\|\| '(.*)' WHERE rowid = last_insert_rowid\(\)$/s.exec(s)[1].replace(/''/g, "'")).join("");
+const rebuilt = pieces.filter((s) => s.includes("last_insert_rowid")).map((s) => /\|\| '(.*)' WHERE rowid = last_insert_rowid\(\)$/s.exec(s)[1].replace(/''/g, "'")).join("");
 eq("the pieces add up to the original", rebuilt === huge, true);
+// a backup from before rows had owners (0.1): restored, its rows go to the first account; shared settings stay shared
+const old = toSql({ ...dump, tables: { notes: [{ id: "a", title: "t" }], prefs: [{ key: "household", value: "{}" }, { key: "persona", value: "waffle" }] } });
+eq("a 0.1 backup: personal rows go to the first account", [old.includes(`UPDATE "notes" SET owner_id = COALESCE((SELECT id FROM users ORDER BY created_at LIMIT 1), '') WHERE owner_id = '';`), /UPDATE prefs SET owner_id = .* AND key NOT IN \('household', 'backup_status', 'vault_sealed_kid', 'changes_pruned_through'\);/.test(old)], [true, true]);
+const now = toSql({ ...dump, tables: { notes: [{ owner_id: "u1", id: "a", title: "t" }], prefs: [{ owner_id: "", key: "household", value: "{}" }] } });
+eq("a 0.2 backup keeps its owners as they are", now.includes("SET owner_id"), false);
 console.log(`${ok} passed, ${bad} failed`); if (bad) process.exit(1);

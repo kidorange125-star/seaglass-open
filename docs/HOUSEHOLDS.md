@@ -49,6 +49,9 @@ not hidden in the interface. (Whoever holds `DATA_KEY` can still read the whole 
   on a device clearing the last person's offline copies and `sg.*` storage (`offline.ts` `forgetOtherPerson`).
 - Proof: `tests/api/households.test.py` (a second person crawls every GET route and MCP tool with the first person's ids)
   and `tests/api/invites.test.py` (two real accounts: joining, roles, separation, removal), with every other suite green.
+- Upgrading from 0.1: 0023 gives every existing row to the first account (tested by running 0.1, making data, then
+  migrating and signing in). A 0.1 backup restored into 0.2 does the same (`scripts/backup-sql.mjs` `beforeOwners`).
+- Removed members: their things leave the live database at once, and the nightly backups (kept 14 days) age them out.
 - Later: the Vault owner backstop (a second check inside `Vault.open`), kid accounts, a shared Family space.
 
 ## In 0.2

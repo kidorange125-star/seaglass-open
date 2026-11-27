@@ -66,7 +66,7 @@ export function HouseholdMembers({ me, members, onMembers }: { me: Account; memb
             }, self ? undefined : `${removing.display_name} was removed`);
           }}>
           <b>{removing.id === me.id ? "Leave this household?" : `Remove ${removing.display_name}?`}</b>
-          <p>{removing.id === me.id ? "Your account" : `${removing.display_name}'s account`} and everything in it are deleted for good: pages, tasks, study history, the assistant's conversation and memory, and uploaded files. Nobody else's things change.</p>
+          <p>{removing.id === me.id ? "Your account" : `${removing.display_name}'s account`} and everything in it are deleted: pages, tasks, study history, the assistant's conversation and memory, and uploaded files. The nightly backups keep a copy for up to 14 days, then it's gone for good. Nobody else's things change.</p>
           <label>Type <code>{removing.username}</code> to confirm
             <input aria-label={`Type ${removing.username} to confirm`} value={confirm} onChange={(e) => setConfirm(e.target.value)} autoCapitalize="none" spellCheck={false} autoComplete="off" />
           </label>
