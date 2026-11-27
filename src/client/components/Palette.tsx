@@ -1,6 +1,6 @@
 // Search, in the spirit of macOS Spotlight: one glass bar, a Top Hit picked by score, and when nothing fits
 // (or what you typed reads like a question) an "Ask Jeff" tab slides in. Tab switches to it; Enter asks.
-import { inFamily } from "../space";
+import { awayFromMine, inFamily } from "../space";
 import { showAssistant } from "../me";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { startFocus } from "./StudyTools";
@@ -82,12 +82,12 @@ export function Palette() {
       { key: "c-db", kind: "command", icon: <IDatabase size={20} />, title: "New database", run: () => void s.newPage({ kind: "database", title: "Untitled database" }) },
       { key: "c-home", kind: "command", icon: <IHome size={20} />, title: "Go home", run: () => s.go("/") },
       ...(!showAssistant() ? [] : [{ key: "c-jeff", kind: "command" as const, icon: <JeffFace size={20} />, title: `Ask ${agentName()}`, hint: "Ctrl J", run: () => s.setAgentOpen(true) }]),
-      ...(inFamily ? [] : [{ key: "c-grades", kind: "command" as const, icon: <ICheckSquare size={20} />, title: "Grades", run: async () => { const r = await api.ensureGrades(); await s.refreshTree(); s.go(`/p/${r.id}`); } }]),
-      ...(inFamily ? [] : [{ key: "c-review", kind: "command" as const, icon: <ICheckSquare size={20} />, title: "Weekly review", run: () => s.go("/review") }]),
-      ...(inFamily ? [] : [{ key: "c-focus", kind: "command" as const, icon: <ICheckSquare size={20} />, title: "Start a 25 minute focus timer", run: () => startFocus("Focus") }]),
-      ...(inFamily ? [] : [{ key: "c-voice", kind: "command" as const, icon: <ICompose size={20} />, title: "Record a voice note", run: () => s.setVoiceOpen(true) }]),
-      ...(inFamily ? [] : [{ key: "c-photo", kind: "command" as const, icon: <ICompose size={20} />, title: "Photo to notes", run: () => s.setPhotoOpen(true) }]),
-      ...(s.route.kind === "page" && !inFamily ? [{ key: "c-quiz", kind: "command" as const, icon: <ICheckSquare size={20} />, title: "Practice test on this page", run: () => s.setQuiz([(s.route as { id: string }).id]) }] : []),
+      ...(awayFromMine ? [] : [{ key: "c-grades", kind: "command" as const, icon: <ICheckSquare size={20} />, title: "Grades", run: async () => { const r = await api.ensureGrades(); await s.refreshTree(); s.go(`/p/${r.id}`); } }]),
+      ...(awayFromMine ? [] : [{ key: "c-review", kind: "command" as const, icon: <ICheckSquare size={20} />, title: "Weekly review", run: () => s.go("/review") }]),
+      ...(awayFromMine ? [] : [{ key: "c-focus", kind: "command" as const, icon: <ICheckSquare size={20} />, title: "Start a 25 minute focus timer", run: () => startFocus("Focus") }]),
+      ...(awayFromMine ? [] : [{ key: "c-voice", kind: "command" as const, icon: <ICompose size={20} />, title: "Record a voice note", run: () => s.setVoiceOpen(true) }]),
+      ...(awayFromMine ? [] : [{ key: "c-photo", kind: "command" as const, icon: <ICompose size={20} />, title: "Photo to notes", run: () => s.setPhotoOpen(true) }]),
+      ...(s.route.kind === "page" && !awayFromMine ? [{ key: "c-quiz", kind: "command" as const, icon: <ICheckSquare size={20} />, title: "Practice test on this page", run: () => s.setQuiz([(s.route as { id: string }).id]) }] : []),
       { key: "c-trash", kind: "command", icon: <ITrash size={20} />, title: "Open trash", run: () => s.go("/trash") },
       { key: "c-side", kind: "command", icon: <PanelLeft size={18} />, title: "Toggle sidebar", hint: "Ctrl \\", run: s.toggleSidebar },
       { key: "c-theme", kind: "command", icon: <Moon size={18} />, title: "Switch theme", hint: "Ctrl Shift L", run: () => s.setTheme(s.theme === "dark" ? "light" : s.theme === "light" ? "system" : "dark") },

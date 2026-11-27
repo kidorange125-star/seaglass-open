@@ -129,3 +129,21 @@
 .ai-models { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; } .ai-models b { font-size: 13.5px; font-weight: 600; }
 .ai-models label, .ai-web { display: flex; gap: 8px; align-items: baseline; font-size: 13.5px; } .ai-models small { color: var(--text-3); }
 @media (max-width: 860px) { .ai-edit input { font-size: 16px; } }
+
+/* Sharing a page with a person (SharePeople.tsx), and Shared with me in the sidebar */
+.share-people { display: flex; flex-direction: column; gap: 6px; padding-bottom: 10px; margin-bottom: 8px; border-bottom: 1px solid var(--border-soft); }
+.share-people ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.share-people li { display: flex; align-items: center; gap: 8px; }
+.share-people .hh-av { width: 26px; height: 26px; font-size: 12.5px; }
+.share-people .sp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.share-people select { width: auto; padding: 4px 6px; font-size: 13px; }
+.share-people p { margin: 2px 0 0; font-size: 12px; }
+.shared-row { text-decoration: none; color: inherit; }
+.shared-row .shared-by { margin-left: auto; padding-right: 8px; color: var(--text-3); font-size: 12px; }
+@media (max-width: 860px) { .share-people select { font-size: 16px; } }
+
+/* The bar on a page someone shared with you (App.tsx) */
+.share-bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px;
+  font-size: 13.5px; color: var(--text-2); background: color-mix(in srgb, var(--accent) 9%, var(--bg)); border-bottom: 1px solid var(--border-soft); }
+.share-bar a { color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap; }
+@media (max-width: 860px) { .share-bar { padding-left: 56px; } }

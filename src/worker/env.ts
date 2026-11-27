@@ -8,6 +8,8 @@ export interface Env {
   RAW?: D1Database;
   /** Set by fetch() for /api/s/family/... requests (src/shared/space.ts). */
   SPACE?: "family";
+  /** Set by fetch() for /api/s/share/<id>/... requests: a page someone shared with this person (sharing.ts). */
+  SHARE?: string;
   /** The signed-in person's name, kept with each change made in the Family space so history says who. */
   ACTOR?: string;
   /** Where each key in use came from: a Worker secret, or saved in the app (keys.ts). */

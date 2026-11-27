@@ -61,6 +61,10 @@ not hidden in the interface. (Whoever holds `DATA_KEY` can still read the whole 
   checked in the sign-in middleware (household mode, a member, an allowed route); the app's `space.ts` sends only those
   routes there and keeps recents, open folders and the offline queue per space. Not covered by the cron (no reminders
   or search-by-meaning for Family tasks yet). Tested by `tests/api/family.test.py`.
+- 0.2.3: sharing a page with one person (`sharing.ts`, migration 0027 `page_shares`, a system table). `/api/s/share/<id>/...`
+  goes through `Sharing.gate`: the share must be the signed-in person's, the route one a shared page allows at its level,
+  and every page id inside the shared branch; then it runs in the owner's scope, with the page list cut to the branch.
+  Tested by `tests/api/sharing.test.py`.
 - Later: the Vault owner backstop (a second check inside `Vault.open`), kid accounts, a shared Family space.
 
 ## In 0.2

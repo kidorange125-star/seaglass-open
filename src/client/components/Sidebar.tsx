@@ -1,7 +1,8 @@
 import { createPortal } from "react-dom";
-import { inFamily, spaceHref, spaceKey } from "../space";
-import { homeName, isHousehold, showAssistant } from "../me";
-import { useMemo, useRef, useState, type ReactElement } from "react";
+import { awayFromMine, inFamily, inShare, shareHref, spaceHref, spaceKey } from "../space";
+import { homeName, isHousehold, shareInfo, showAssistant } from "../me";
+import type { SharedWithMe } from "../api";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { MovePicker } from "./MovePicker";
 import { EDITION } from "../edition";
 import { AccountDialog } from "./AccountDialog";
@@ -46,6 +47,9 @@ export function Sidebar() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [permsOpen, setPermsOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
+  // Pages other people in the household shared with you (sharing.ts), shown in your own space.
+  const [sharedWithMe, setSharedWithMe] = useState<SharedWithMe[]>([]);
+  useEffect(() => { if (!awayFromMine && isHousehold()) void api.sharedWithMe().then(setSharedWithMe).catch(() => undefined); }, []);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const toggle = (id: string, force?: boolean) => setOpen((o) => {
@@ -143,10 +147,10 @@ export function Sidebar() {
       {isHousehold() && <>
         <div className="mp-title">Space</div>
         <div className="seg spaces" role="radiogroup" aria-label="Space">
-          <button role="radio" aria-checked={!inFamily} className={!inFamily ? "on" : ""} onClick={() => { if (inFamily) location.href = spaceHref(false); }}>Mine</button>
+          <button role="radio" aria-checked={!awayFromMine} className={!awayFromMine ? "on" : ""} onClick={() => { if (awayFromMine) location.href = spaceHref(false); }}>Mine</button>
           <button role="radio" aria-checked={inFamily} className={inFamily ? "on" : ""} onClick={() => { if (!inFamily) location.href = spaceHref(true); }}>{homeName()}</button>
         </div>
-        <small className="mp-note">{inFamily ? "Shared with everyone in the household: pages, tasks and the calendar." : "Only you can see your space."}</small>
+        <small className="mp-note">{inFamily ? "Shared with everyone in the household: pages, tasks and the calendar." : inShare ? "A page shared with you. Your own space is under Mine." : "Only you can see your space."}</small>
         <div className="mp-sep" />
       </>}
       <div className="mp-title">Theme</div>
@@ -194,31 +198,37 @@ export function Sidebar() {
     <aside className="sidebar">
       <div className="sb-top">
         <span className="rel ws-wrap">
-          <button className="ws" onClick={() => setSettings(settings === "top" ? null : "top")}><Logo size={22} /> <span className="ws-name">{inFamily ? homeName() : "Seaglass"}</span> <span className="ws-chev"><IChevronsUpDown size={16} /></span></button>
+          <button className="ws" onClick={() => setSettings(settings === "top" ? null : "top")}><Logo size={22} /> <span className="ws-name">{inFamily ? homeName() : inShare ? `Shared by ${shareInfo()?.owner_name || "someone"}` : "Seaglass"}</span> <span className="ws-chev"><IChevronsUpDown size={16} /></span></button>
           {settingsMenu("top")}
         </span>
         <button className="ghost icon-btn sb-collapse" title="Close sidebar (Ctrl+\)" onClick={s.toggleSidebar}><ICollapse size={20} /></button>
       </div>
       <div className="sb-nav">
         <button className="sb-btn" title="Search (Ctrl+K)" onClick={() => { s.setPaletteOpen(true); }}><ISearch size={S} /> Search <kbd>Ctrl K</kbd></button>
-        <a className={`sb-btn ${s.route.kind === "home" ? "active" : ""}`} href="#/" onClick={afterNav}><IHome size={S} /> Home</a>
+        {inShare && <a className="sb-btn" href={spaceHref(false)}><IHome size={S} /> Back to my space</a>}
+        {!inShare && <><a className={`sb-btn ${s.route.kind === "home" ? "active" : ""}`} href="#/" onClick={afterNav}><IHome size={S} /> Home</a>
         <a className={`sb-btn ${s.route.kind === "tasks" ? "active" : ""}`} href="#/tasks" onClick={afterNav}><ICheckSquare size={S} /> {inFamily ? "Family tasks" : "My tasks"} {due > 0 && <span className="sb-count" title={`${due} due today or earlier`}>{due}</span>}</a>
-          {EDITION.calendar && <a className={`sb-btn ${s.route.kind === "calendar" ? "active" : ""}`} href="#/calendar" onClick={afterNav}><ICalendar size={S} /> Calendar</a>}
-        {!inFamily && <a className={`sb-btn ${s.route.kind === "study" ? "active" : ""}`} href="#/study" onClick={afterNav}><IStudy size={S} /> Study</a>}
+          {EDITION.calendar && <a className={`sb-btn ${s.route.kind === "calendar" ? "active" : ""}`} href="#/calendar" onClick={afterNav}><ICalendar size={S} /> Calendar</a>}</>}
+        {!awayFromMine && <a className={`sb-btn ${s.route.kind === "study" ? "active" : ""}`} href="#/study" onClick={afterNav}><IStudy size={S} /> Study</a>}
         {showAssistant() && <button className={`sb-btn ${s.agentOpen ? "active" : ""}`} title={`Ask ${agentName()} (Ctrl+J)`} onClick={() => { s.setAgentOpen(!s.agentOpen); afterNav(); }}><span className="sb-jeff"><JeffFace size={19} /></span> {agentName()}{unread > 0 && <span className="sb-badge" title={`${unread} new from ${agentName()}`}>{unread}</span>}</button>}
       </div>
       <div className="sb-scroll">
         {favorites.length > 0 && section("fav", "Favorites", <>{favorites.map((n) => renderRow(n, 0, "fav:"))}</>)}
         {recents.length > 0 && section("recent", "Recents", <>{recents.map((n) => renderRow(n, 0, "rec:"))}</>)}
-        {section("private", inFamily ? "Shared pages" : "Private", <>
+        {!awayFromMine && sharedWithMe.length > 0 && section("shared", "Shared with me", <>{sharedWithMe.map((x) => (
+          <a key={x.id} className="row shared-row" style={{ paddingLeft: 4 }} href={shareHref(x.id, x.note_id)} title={`${x.owner_name} shared this with you to ${x.level}`}>
+            <span className="ico-swap"><span className="ico">{x.icon || "📄"}</span></span><span className="name">{x.title || "Untitled"}</span><small className="shared-by">{x.owner_name}</small>
+          </a>
+        ))}</>)}
+        {section("private", inFamily ? "Shared pages" : inShare ? (shareInfo()?.level === "edit" ? "Shared with you (can edit)" : "Shared with you (view only)") : "Private", <>
           {(showAll ? roots : roots.slice(0, PRIVATE_LIMIT)).map((n) => renderRow(n, 0))}
           {roots.length > PRIVATE_LIMIT && (
             <div className="row more-row" style={{ paddingLeft: 4 }} onClick={() => setShowAll((v) => { try { localStorage.setItem("sg.private.all", v ? "0" : "1"); } catch { /* ignore */ } return !v; })}>
               <span className="ico-swap"><span className="ico"><IMore size={17} /></span></span><span className="name">{showAll ? "Show less" : `${roots.length - PRIVATE_LIMIT} more`}</span>
             </div>
           )}
-          <div className="row add-page" style={{ paddingLeft: 4 }} onClick={async () => { await s.newPage(); afterNav(); }}><span className="ico-swap"><span className="ico"><IPlus size={17} /></span></span><span className="name">Add a page</span></div>
-          <div className="row drop-root" onDragOver={(e) => { if (dragId) e.preventDefault(); }} onDrop={async () => { const id = dragId; dragId = null; if (id) { await api.patch(id, { parent_id: null, position: Math.max(0, ...roots.map((r) => r.position)) + 1 }); void s.refreshTree(); } }}>Drop here to move to top level</div>
+          {!inShare && <div className="row add-page" style={{ paddingLeft: 4 }} onClick={async () => { await s.newPage(); afterNav(); }}><span className="ico-swap"><span className="ico"><IPlus size={17} /></span></span><span className="name">Add a page</span></div>}
+          {!inShare && <div className="row drop-root" onDragOver={(e) => { if (dragId) e.preventDefault(); }} onDrop={async () => { const id = dragId; dragId = null; if (id) { await api.patch(id, { parent_id: null, position: Math.max(0, ...roots.map((r) => r.position)) + 1 }); void s.refreshTree(); } }}>Drop here to move to top level</div>}
         </>, <>
           <button title="New database" onClick={() => void s.newPage({ kind: "database", title: "Untitled database" })}><IDatabase size={17} /></button>
           <button title="New page" onClick={async () => { await s.newPage(); afterNav(); }}><IPlus size={17} /></button>
