@@ -6,15 +6,16 @@ import { MODEL, MODELS } from "./agent";
 
 export type AiMode = "on" | "later" | "off";
 export type AiSettings = { mode: AiMode; models: string[]; web: boolean };
-const DEFAULTS: AiSettings = { mode: "on", models: Object.keys(MODELS), web: true };
+// A function, not a constant: agent.ts and this file import each other, so MODELS may not exist yet when this loads.
+const defaults = (): AiSettings => ({ mode: "on", models: Object.keys(MODELS), web: true });
 
 export async function get(db: D1Database): Promise<AiSettings> {
   const v = (await db.prepare("SELECT value FROM prefs WHERE owner_id = '' AND key = 'ai_settings' /*any-owner*/").first<{ value: string }>())?.value;
   try {
     const s = JSON.parse(v ?? "{}") as Partial<AiSettings>;
-    const models = Array.isArray(s.models) ? s.models.filter((m) => m in MODELS) : DEFAULTS.models;
-    return { mode: s.mode === "off" || s.mode === "later" ? s.mode : "on", models: models.length ? models : DEFAULTS.models, web: s.web !== false };
-  } catch { return DEFAULTS; }
+    const models = Array.isArray(s.models) ? s.models.filter((m) => m in MODELS) : defaults().models;
+    return { mode: s.mode === "off" || s.mode === "later" ? s.mode : "on", models: models.length ? models : defaults().models, web: s.web !== false };
+  } catch { return defaults(); }
 }
 
 export async function set(db: D1Database, patch: Record<string, unknown>): Promise<AiSettings> {
