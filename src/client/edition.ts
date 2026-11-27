@@ -6,5 +6,5 @@ export const EDITION = {
   /** The Calendar screen (#/calendar): events plus tasks with dates. */
   calendar: true,
   /** Shown in Settings > About. */
-  version: "0.2.1",
+  version: "0.2.2",
 };

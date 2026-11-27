@@ -6,10 +6,12 @@ import type { Hono } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { Env } from "./env";
 import {
-  COOKIE, checkPassword, cookieOptions, createSession, currentUser, endOtherSessions, endSession, hashPassword, isLocalHost,
+  COOKIE, checkPassword, cookieOptions, createSession, currentUser, devOpen, endOtherSessions, endSession, hashPassword, isLocalHost,
   loginFailed, loginLocked, loginOk, passwordProblem, safeEqual, usernameProblem, type User,
 } from "./auth";
 import { requireOwner } from "./scope";
+import * as AiSet from "./aisettings";
+import { authMode } from "./claude-auth";
 
 export type Household = { mode: "individual" | "household"; name: string };
 
@@ -40,12 +42,13 @@ export function registerAccounts(app: Hono<{ Bindings: Env }>) {
     // A new deploy whose database tables haven't been applied yet: say so instead of failing.
     const users = await userCount(c.env.DB).catch((e) => (/no such table/i.test(String(e)) ? -1 : Promise.reject(e)));
     if (users < 0) return c.json({ authed: false, setup: true, no_tables: true, code_required: true });
-    if (!users && !c.env.AUTH_OPEN) {
+    if (!users && !devOpen(c.env, c.req.url)) {
       const local = isLocalHost(new URL(c.req.url).hostname);
       return c.json({ authed: false, setup: true, code_required: !local || !!c.env.SETUP_CODE, code_set: !!c.env.SETUP_CODE });
     }
     const u = await currentUser(c.env, c.req.url, getCookie(c, COOKIE));
-    return c.json({ authed: !!u, setup: false, user: u ? publicUser(u) : null, household: await household(c.env.DB) });
+    const ai = u ? await AiSet.get(c.env.DB) : null;
+    return c.json({ authed: !!u, setup: false, user: u ? publicUser(u) : null, household: await household(c.env.DB), ...(ai ? { ai: { mode: ai.mode, connected: authMode(c.env) !== "none" } } : {}) });
   });
 
   app.post("/api/setup", async (c) => {

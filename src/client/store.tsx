@@ -1,3 +1,4 @@
+import { spaceKey } from "./space";
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { api } from "./api";
@@ -133,7 +134,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const toastId = useRef(0);
 
   const [treeLoaded, setTreeLoaded] = useState(false);
-  const [recents, setRecents] = useState<string[]>(() => { try { return JSON.parse(read("sg.recents", "[]")); } catch { return []; } });
+  const [recents, setRecents] = useState<string[]>(() => { try { return JSON.parse(read(spaceKey("sg.recents"), "[]")); } catch { return []; } });
   const refreshTree = useCallback(async () => { try { setTree(await api.tree()); setTreeLoaded(true); } catch { /* shown elsewhere */ } }, []);
   useEffect(() => { refreshTree(); }, [refreshTree]);
 
@@ -151,7 +152,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Recents for the sidebar (Notion keeps the same list).
   useEffect(() => {
     if (route.kind !== "page") return;
-    setRecents((r) => { const next = [route.id, ...r.filter((x) => x !== route.id)].slice(0, 20); write("sg.recents", JSON.stringify(next)); return next; });
+    setRecents((r) => { const next = [route.id, ...r.filter((x) => x !== route.id)].slice(0, 20); write(spaceKey("sg.recents"), JSON.stringify(next)); return next; });
   }, [route]);
 
   // Multi-device sync: while the app is visible, ask the server what changed since the last check.

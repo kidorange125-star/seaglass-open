@@ -31,6 +31,8 @@ def join(who, role, name):
 k = join(kid, "kid", "Kit"); kid_id = k.get("id")
 check("a kid joins with the kid role", k.get("role") == "kid", k)
 a = join(adult, "adult", "Ada")
+# The assistant must act without asking here, whatever DEFAULT_AGENT_PERMISSIONS says.
+for w in (ana, kid, adult): w("PUT", "/api/agent/permissions", {"add": "allow", "edit": "allow", "delete": "allow"})
 
 # ---- a kid's starting rules, which they can't change
 mine = j(kid("GET", "/api/usage")[1]) or {}

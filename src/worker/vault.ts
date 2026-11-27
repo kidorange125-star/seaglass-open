@@ -22,11 +22,11 @@ const IV_LEN = 12;
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-export type Purpose = "notes" | "history" | "chats" | "memory" | "push" | "index" | "files" | "proactive";
+export type Purpose = "notes" | "history" | "chats" | "memory" | "push" | "index" | "files" | "proactive" | "secrets";
 /** Which key protects which table. Tables not listed are not encrypted (ids, timestamps, counters). */
 const PURPOSE_OF: Record<string, Purpose> = {
   notes: "notes", comments: "notes", actions: "history", chats: "chats", memories: "memory",
-  push_subs: "push", push_snooze: "push", embeddings: "index", files: "files", prefs: "memory", inbox: "proactive", prompts: "proactive", routines: "proactive", thread: "chats", study_subjects: "notes", study_exams: "notes", study_sessions: "notes", study_misses: "notes", study_sets: "notes",
+  push_subs: "push", push_snooze: "push", embeddings: "index", files: "files", prefs: "memory", inbox: "proactive", prompts: "proactive", routines: "proactive", thread: "chats", study_subjects: "notes", study_exams: "notes", study_sessions: "notes", study_misses: "notes", study_sets: "notes", household_keys: "secrets",
 };
 
 export class VaultError extends Error {}

@@ -55,7 +55,7 @@ Open your Worker's address (`https://seaglass.<your-subdomain>.workers.dev`) and
 
 1. **Who it's for**: just you, or your household. You can change this in Settings > Account & household. (Family members get
    their own accounts in a coming release.)
-2. **Your account**: the setup code, your name (what Waffle calls you), a username and a password of 10+ characters.
+2. **Your account**: the setup code, your name (what Waffle calls you), a username and a password of 6+ characters.
 
 Settings > Setup & status lists everything that's connected and what's missing.
 

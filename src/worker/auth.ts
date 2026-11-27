@@ -33,7 +33,7 @@ export async function checkPassword(password: string, u: { pass_hash: string; pa
 
 /** What a password must be: long enough, and not containing the username. */
 export function passwordProblem(password: unknown, username = "") {
-  if (typeof password !== "string" || password.length < 10) return "Use at least 10 characters for the password.";
+  if (typeof password !== "string" || password.length < 6) return "Use at least 6 characters for the password.";
   if (password.length > 200) return "That password is too long.";
   if (username && password.toLowerCase().includes(username.toLowerCase())) return "Don't put your username in your password.";
   return null;

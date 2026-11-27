@@ -68,10 +68,10 @@ export function HouseholdMembers({ me, members, onMembers }: { me: Account; memb
         }}>
           <b>New password for {resetting.display_name}</b>
           <p>For when they've forgotten theirs. Tell them the new one; they can change it in their own settings.</p>
-          <input aria-label="New password" type="text" autoComplete="off" spellCheck={false} placeholder="10 characters or more" value={newPw} onChange={(e) => setNewPw(e.target.value)} />
+          <input aria-label="New password" type="text" autoComplete="off" spellCheck={false} placeholder="6 characters or more" value={newPw} onChange={(e) => setNewPw(e.target.value)} />
           <div className="hh-row">
             <button type="button" className="ghost" onClick={() => setResetting(null)}>Cancel</button>
-            <button className="primary" disabled={busy === "pw" || newPw.length < 10}>Set password</button>
+            <button className="primary" disabled={busy === "pw" || newPw.length < 6}>Set password</button>
           </div>
         </form>
       )}

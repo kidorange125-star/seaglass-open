@@ -97,3 +97,27 @@
   .login.welcome h1 { font-size: 25px; margin-top: 14px; }
   .login.welcome .w-actions .primary, .login.welcome > button.primary { min-height: 46px; font-size: 16px; border-radius: 14px; }
 }
+
+/* Setup after the account (SetupSteps.tsx): AI, the assistant, the household, this device */
+.ob-count { margin-left: auto; font-size: 13px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.ob .su-h { margin: 10px 0 0; font-size: 15px; font-weight: 650; }
+.su-panel { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface); animation: ob-in .25s ease both; }
+.su-panel p { margin: 0; color: var(--text-2); font-size: 14.5px; line-height: 1.5; }
+.su-howto { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 14.5px; line-height: 1.45; color: var(--text-2); }
+.su-howto a { color: var(--accent); }
+.su-panel .w-field { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; font-weight: 600; }
+.su-panel input, .su-invite input, .su-invite select, .su-more input { padding: 10px 12px; font-size: 15px; }
+.su-checks-list { display: flex; flex-direction: column; gap: 2px; }
+.su-check { display: flex; gap: 12px; align-items: flex-start; padding: 10px 2px; cursor: pointer; }
+.su-check input { margin-top: 3px; width: 18px; height: 18px; flex: none; accent-color: #3f8e86; }
+.su-check span { display: flex; flex-direction: column; gap: 2px; } .su-check b { font-size: 15px; font-weight: 600; }
+.su-check small { color: var(--text-2); font-size: 13px; line-height: 1.4; }
+.ob .su-seg { display: flex; margin: 0; padding: 3px; gap: 3px; border-radius: 12px; }
+.ob .su-seg button { flex: 1; min-height: 40px; border-radius: 9px; font-size: 14.5px; text-transform: none; }
+.su-more summary { cursor: pointer; font-weight: 600; font-size: 14.5px; padding: 6px 0; }
+.su-more input { width: 100%; margin-top: 6px; }
+.su-invite { display: flex; gap: 8px; flex-wrap: wrap; } .su-invite input { flex: 1; min-width: 160px; }
+.su-code { align-items: flex-start; }
+.su-ok { margin: 0; font-weight: 600; color: #3f8e86; }
+.ob .su-btn { align-self: flex-start; border: 1px solid var(--border); padding: 10px 16px; border-radius: 12px; }
+@media (max-width: 860px) { .su-panel input, .su-invite input, .su-invite select, .su-more input { font-size: 16px; } }

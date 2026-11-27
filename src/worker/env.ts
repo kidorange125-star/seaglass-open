@@ -6,6 +6,12 @@ export interface Env {
   DB: D1Database;
   /** The unwrapped database, kept by fetch/scheduled so a person's scope can be made from it (scope.ts asPerson). */
   RAW?: D1Database;
+  /** Set by fetch() for /api/s/family/... requests (src/shared/space.ts). */
+  SPACE?: "family";
+  /** The signed-in person's name, kept with each change made in the Family space so history says who. */
+  ACTOR?: string;
+  /** Where each key in use came from: a Worker secret, or saved in the app (keys.ts). */
+  KEY_SOURCES?: Record<string, "secret" | "saved">;
   FILES: R2Bucket;
   /** Workers AI (Whisper, embeddings). Absent in some test setups, so features check for it. */
   AI?: Ai;

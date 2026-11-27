@@ -57,6 +57,10 @@ not hidden in the interface. (Whoever holds `DATA_KEY` can still read the whole 
   kid rules live in `person_rules`, a system table only owner routes write, and are checked before each call. Kid
   accounts: teach mode in the agent's context, `/api/ai/write` and rewriting selections refused, no MCP (an outside
   Claude never sees teach mode), no deleting themselves. Tested by `tests/api/usage.test.py`.
+- 0.2.2: the Family space (`src/shared/space.ts`): owner id `family`, `/api/s/family/...` rewritten in `fetch()` and
+  checked in the sign-in middleware (household mode, a member, an allowed route); the app's `space.ts` sends only those
+  routes there and keeps recents, open folders and the offline queue per space. Not covered by the cron (no reminders
+  or search-by-meaning for Family tasks yet). Tested by `tests/api/family.test.py`.
 - Later: the Vault owner backstop (a second check inside `Vault.open`), kid accounts, a shared Family space.
 
 ## In 0.2

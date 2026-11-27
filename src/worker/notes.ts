@@ -1,3 +1,4 @@
+import { ownerOf } from "./scope";
 import { cleanHtml, extractMentions, toText } from "./sanitize";
 import * as Vault from "./vault";
 import { HIDDEN_SQL, HiddenError, hiddenIds, type HiddenSet } from "./hidden";
@@ -865,10 +866,15 @@ export async function ensureTasksDb(db: D1Database, ctx: Ctx, today?: string) {
     }
     return { id: found.id, created: false, trashed: found.deleted_at !== null };
   }
-  const list = await createNote(db, { kind: "database", title: "My tasks", icon: "✅", db_schema: TASKS_SCHEMA, html: "" }, ctx);
+  // The shared Family space (src/shared/space.ts) gets the household's list, with chores rather than school to start.
+  const family = ownerOf(db) === "family";
+  const list = await createNote(db, { kind: "database", title: family ? "Family tasks" : "My tasks", icon: family ? "🏠" : "✅", db_schema: TASKS_SCHEMA, html: "" }, ctx);
   const base = /^\d{4}-\d{2}-\d{2}$/.test(today ?? "") ? new Date(`${today}T12:00:00Z`) : new Date();
   const day = (n: number) => { const d = new Date(base); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
-  const starters = [
+  const starters = family ? [
+    { title: "Tick this box when it's done", props: { status: "todo", due: { start: day(0) }, priority: "medium" } },
+    { title: "Add this week's chores and errands", props: { status: "todo", due: { start: day(1) } } },
+  ] : [
     { title: "Tick this box when you're done", props: { status: "todo", due: { start: day(0) }, priority: "medium" } },
     { title: "Plan this week's study sessions", props: { status: "doing", due: { start: day(2) }, priority: "high", tags: ["school"] } },
     { title: "Ask Waffle to add a task for you", props: { status: "todo", tags: ["personal"] } },

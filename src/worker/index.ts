@@ -22,7 +22,7 @@ import * as N from "./notes";
 import { isHidden } from "./hidden";
 import type { Env } from "./env";
 import { COOKIE, currentUser, devOpen } from "./auth";
-import { registerAccounts, registerAccountRoutes, userCount } from "./setup";
+import { household, registerAccounts, registerAccountRoutes, userCount } from "./setup";
 import * as Approvals from "./approvals";
 import { MODEL, MODELS, runAgent, ToolError, type AgentEvent } from "./agent";
 import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
@@ -32,8 +32,11 @@ import * as Suggest from "./suggest";
 import * as Pro from "./proactive";
 import * as Thread from "./thread";
 import { handleMcp } from "./mcp";
+import { FAMILY, SPACE_PREFIX, familyAllows } from "../shared/space";
 import * as Files from "./files";
 import * as Usage from "./usage";
+import * as Keys from "./keys";
+import * as AiSet from "./aisettings";
 import { registerHousehold, registerJoin } from "./household";
 import { asPerson, asSystem, ownerOf, people } from "./scope";
 import { agentCtx } from "./identity";
@@ -56,6 +59,14 @@ app.use("/api/*", async (c, next) => {
   if (!u) return c.json({ error: "unauthorized" }, 401);
   // Backups and encryption upkeep cover everyone's data, so only the household's owner can run or download them.
   if (/^\/api\/(backups|security)(\/|$)/.test(c.req.path) && u.role !== "owner") return c.json({ error: "Only the household's owner can do this." }, 403);
+  if (AiSet.AI_ROUTE.test(c.req.path) && (await AiSet.get(c.env.DB)).mode === "off") return c.json({ error: AiSet.OFF_MESSAGE }, 403);
+  if (c.env.SPACE === FAMILY) {
+    // The shared Family space: for everyone in a household, and only for pages, databases, tasks and the calendar.
+    if ((await household(c.env.DB)).mode !== "household") return c.json({ error: "The Family space is for households. Switch to a household in Settings first." }, 403);
+    if (!familyAllows(c.req.method, c.req.path)) return c.json({ error: "That isn't available in the Family space." }, 403);
+    c.env = { ...asPerson(c.env, FAMILY), ACTOR: u.display_name || u.username };
+    return next();
+  }
   // From here on, every query this request makes can only reach this person's things (scope.ts).
   c.env = asPerson(c.env, u.id);
   return next();
@@ -75,16 +86,17 @@ app.onError((e, c) => {
   return c.json({ error: "server error" }, 500);
 });
 
-const ctx = (): N.Ctx => ({ source: "user", runId: crypto.randomUUID() });
+// A change made by the signed-in person. In the Family space it also says who (shown in version history).
+const ctx = (c: { env: Env }): N.Ctx => ({ source: "user", runId: crypto.randomUUID(), ...(c.env.ACTOR ? { agent: c.env.ACTOR } : {}) });
 const body = <T = Record<string, unknown>>(c: { req: { json: () => Promise<unknown> } }) => c.req.json().catch(() => ({})) as Promise<T>;
 const notFound = (c: { json: (o: unknown, s: 404) => Response }) => c.json({ error: "not found" }, 404);
 
 // ---------------------------------------------------------------- notes
 
 app.get("/api/tree", async (c) => c.json(await N.listTree(c.env.DB)));
-app.post("/api/grades/ensure", async (c) => c.json(await N.ensureGradesDb(c.env.DB, ctx())));
-app.post("/api/calendar/ensure", async (c) => c.json(await N.ensureEventsDb(c.env.DB, ctx())));
-app.post("/api/tasks/ensure", async (c) => c.json(await N.ensureTasksDb(c.env.DB, ctx(), String((await body<{ today?: string }>(c)).today ?? ""))));
+app.post("/api/grades/ensure", async (c) => c.json(await N.ensureGradesDb(c.env.DB, ctx(c))));
+app.post("/api/calendar/ensure", async (c) => c.json(await N.ensureEventsDb(c.env.DB, ctx(c))));
+app.post("/api/tasks/ensure", async (c) => c.json(await N.ensureTasksDb(c.env.DB, ctx(c), String((await body<{ today?: string }>(c)).today ?? ""))));
 // Lightweight multi-device sync: clients poll for notes changed since the last server timestamp.
 app.get("/api/changes", async (c) => {
   const now = Date.now();
@@ -438,7 +450,7 @@ app.put("/api/study-pages/:id", (c) => studyErr(c, async () => c.json(await Stud
 app.get("/api/trash", async (c) => c.json(await N.listTrash(c.env.DB)));
 app.delete("/api/trash", async (c) => c.json({ purged: await N.emptyTrash(c.env.DB) }));
 
-app.post("/api/notes", async (c) => c.json(await N.createNote(c.env.DB, await body(c), ctx()), 201));
+app.post("/api/notes", async (c) => c.json(await N.createNote(c.env.DB, await body(c), ctx(c)), 201));
 
 app.get("/api/notes/:id", async (c) => {
   const n = await N.getNote(c.env.DB, c.req.param("id"), c.req.query("deleted") === "1");
@@ -447,18 +459,18 @@ app.get("/api/notes/:id", async (c) => {
 });
 
 app.patch("/api/notes/:id", async (c) => {
-  const n = await N.patchNote(c.env.DB, c.req.param("id"), await body<N.Patch>(c), ctx());
+  const n = await N.patchNote(c.env.DB, c.req.param("id"), await body<N.Patch>(c), ctx(c));
   return n ? c.json(n) : notFound(c);
 });
 
-app.delete("/api/notes/:id", async (c) => ((await N.trashNote(c.env.DB, c.req.param("id"), ctx())) ? c.body(null, 204) : notFound(c)));
+app.delete("/api/notes/:id", async (c) => ((await N.trashNote(c.env.DB, c.req.param("id"), ctx(c))) ? c.body(null, 204) : notFound(c)));
 app.post("/api/notes/:id/restore", async (c) => {
-  const n = await N.restoreNote(c.env.DB, c.req.param("id"), ctx());
+  const n = await N.restoreNote(c.env.DB, c.req.param("id"), ctx(c));
   return n ? c.json(n) : notFound(c);
 });
 app.delete("/api/notes/:id/purge", async (c) => ((await N.purgeNote(c.env.DB, c.req.param("id"))) ? c.body(null, 204) : notFound(c)));
 app.post("/api/notes/:id/duplicate", async (c) => {
-  const n = await N.duplicateNote(c.env.DB, c.req.param("id"), ctx());
+  const n = await N.duplicateNote(c.env.DB, c.req.param("id"), ctx(c));
   return n ? c.json(n, 201) : notFound(c);
 });
 
@@ -471,7 +483,7 @@ app.get("/api/notes/:id/history/:aid", async (c) => {
   return v ? c.json(v) : notFound(c);
 });
 app.post("/api/notes/:id/history/:aid/restore", async (c) => {
-  const n = await N.restoreVersion(c.env.DB, c.req.param("id"), Number(c.req.param("aid")), ctx());
+  const n = await N.restoreVersion(c.env.DB, c.req.param("id"), Number(c.req.param("aid")), ctx(c));
   return n ? c.json(n) : notFound(c);
 });
 
@@ -613,6 +625,40 @@ app.post("/api/routines/:id/run", async (c) => {
 // Encryption at rest: counts only (never content), and a button to encrypt anything still stored in plaintext.
 app.get("/api/security/status", async (c) => c.json(await Seal.status(c.env)));
 app.post("/api/security/seal-all", async (c) => c.json(await Seal.sealNow(c.env)));
+
+// Setup & status: the household's AI choices and the keys saved in the app (owners change them; never sent back).
+app.get("/api/setup/ai", async (c) => {
+  const u = await currentUser(c.env, c.req.url, getCookie(c, COOKIE));
+  const owner = u?.role === "owner";
+  const models = Object.entries(MODELS).map(([id, m]) => ({ id, label: m.label, blurb: m.blurb }));
+  return c.json({ settings: await AiSet.get(c.env.DB), mode: authMode(c.env), connected: authMode(c.env) !== "none", models, default_model: MODEL, owner, keys: owner ? await Keys.status(c.env) : [] });
+});
+app.put("/api/setup/ai", async (c) => {
+  const u = await currentUser(c.env, c.req.url, getCookie(c, COOKIE));
+  if (u?.role !== "owner") return c.json({ error: "Only the household's owner can do this." }, 403);
+  try { return c.json(await AiSet.set(c.env.DB, await body<Record<string, unknown>>(c))); }
+  catch (e) { return c.json({ error: (e as Error).message }, 400); }
+});
+app.put("/api/setup/keys/:name", async (c) => {
+  const u = await currentUser(c.env, c.req.url, getCookie(c, COOKIE));
+  if (u?.role !== "owner") return c.json({ error: "Only the household's owner can do this." }, 403);
+  const name = c.req.param("name");
+  if (!Keys.isKeyName(name)) return c.json({ error: "not found" }, 404);
+  const b = await body<{ value?: unknown }>(c);
+  // The local test suites can't reach Claude with a made-up key: AUTH_OPEN on localhost skips the live check.
+  const bad = await Keys.save(c.env, name, b.value, u.id, !devOpen(c.env, c.req.url));
+  if (bad) return c.json({ error: bad, field: "value" }, 400);
+  if (name === "ANTHROPIC_API_KEY") await AiSet.set(c.env.DB, { mode: "on" });
+  return c.json({ ok: true });
+});
+app.delete("/api/setup/keys/:name", async (c) => {
+  const u = await currentUser(c.env, c.req.url, getCookie(c, COOKIE));
+  if (u?.role !== "owner") return c.json({ error: "Only the household's owner can do this." }, 403);
+  const name = c.req.param("name");
+  if (!Keys.isKeyName(name)) return c.json({ error: "not found" }, 404);
+  await Keys.remove(c.env, name);
+  return c.json({ ok: true });
+});
 
 // AI usage (usage.ts): your own, and for owners everyone's totals (numbers only) and the limits they set.
 app.get("/api/usage", async (c) => c.json(await Usage.mine(c.env.DB)));
@@ -804,7 +850,10 @@ async function putFile(env: Env, key: string, data: ArrayBuffer, type: string) {
 /** A file opens for the person who uploaded it, and for anyone when it's on a page they shared publicly. */
 async function mayOpenFile(env: Env, obj: R2Object, id: string, url: string, cookie: string | undefined) {
   const owner = await Files.fileOwner(env, obj);
-  if ((await currentUser(env, url, cookie))?.id === owner) return true;
+  const viewer = await currentUser(env, url, cookie);
+  if (viewer?.id === owner) return true;
+  // A file in the shared Family space opens for anyone signed in to this household.
+  if (owner === FAMILY && viewer) return true;
   const shared = (await env.DB.prepare("SELECT id, html, cover FROM notes WHERE owner_id = ? AND share_slug IS NOT NULL AND deleted_at IS NULL /*any-owner*/").bind(owner).all<{ id: string; html: string | null; cover: string | null }>()).results;
   const needle = `/files/${id}/`;
   for (const n of shared) {
@@ -983,13 +1032,24 @@ export default {
       const detail = e instanceof Vault.VaultError && e.message !== "no_data_key" ? e.message : "No data key is set. Make one with: npm run data:keygen -- --out <file> --put";
       return Response.json({ error: "no_data_key", detail }, { status: 503 });
     }
+    env = await Keys.fill(env); // keys saved in the app (keys.ts); a Worker secret of the same name wins
     const base = (env.PUBLIC_URL || new URL(request.url).origin).replace(/\/+$/, "");
+    // The Family space: /api/s/family/<route> is the normal /api/<route>, run in the shared scope (checked in the
+    // sign-in middleware below, which also refuses any route that isn't meant for it).
+    let sys = asSystem(env);
+    const url = new URL(request.url);
+    if (url.pathname.startsWith(`${SPACE_PREFIX}/`)) {
+      url.pathname = `/api/${url.pathname.slice(SPACE_PREFIX.length + 1)}`;
+      request = new Request(url, request);
+      sys = { ...sys, SPACE: FAMILY };
+    }
     // Until a request says who it's for, the database is the system's, which can't reach anyone's personal things.
-    return providerFor(base).fetch(request, asSystem(env), ctx);
+    return providerFor(base).fetch(request, sys, ctx);
   },
   // Every minute (see triggers in wrangler.jsonc): task notifications. Once a day, at 04:17 UTC, also drop
   // expired OAuth tokens and grants from KV.
   async scheduled(event: ScheduledController, rawEnv: Env, ctx: ExecutionContext) {
+    try { await Vault.configure(rawEnv); rawEnv = await Keys.fill(rawEnv); } catch { /* reported just below */ }
     const env = asSystem(rawEnv);
     try { await Vault.configure(env); } catch (e) { console.error("no usable DATA_KEY: skipping this run", e instanceof Error ? e.message : e); return; }
     const at = new Date(event.scheduledTime);

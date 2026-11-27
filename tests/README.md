@@ -66,6 +66,8 @@ Start the server with `npm run dev`. The `.dev.vars` mode matters:
 | `python tests/api/households.test.py` | same as mcp, on an EMPTY database (no accounts); set `SEAGLASS_STATE` to the test server's `--persist-to` folder | 29: two people on one copy: B (an account added by SQL) sees none of A's things on any GET route or MCP tool, and naming A's ids changes nothing |
 | `python tests/api/invites.test.py` | `ANTHROPIC_API_KEY=mock`, `AUTH_OPEN=1`, no `SETUP_CODE`, on an EMPTY database; set `SEAGLASS_STATE` too | 36: two real accounts with sessions: invites (code, link, once only, cancel), joining, roles and their limits, separation of pages and files, removing a member deletes everything of theirs |
 | `python tests/api/usage.test.py` | same as invites | 32: AI usage recorded per person, feature and model; daily, monthly and household limits stop the next request; kid accounts (teach mode refuses writing and rewriting, no web, can't change their own rules or delete themselves); owners reset a forgotten password |
+| `python tests/api/family.test.py` | same as invites | 38: the shared Family space: everyone in a household sees and edits it, history says who, personal pages never reach it, only page/task/calendar routes work there, Family files open for the household, it closes outside a household and comes back
+| `python tests/api/setup.test.py` | same as invites | 27: setup after the account: keys saved in the app (checked, sealed, never sent back, last four shown), AI later and off (every AI route refuses), allowed models, the notification key Seaglass makes itself
 
 Restart `npm run dev` after changing `.dev.vars`.
 

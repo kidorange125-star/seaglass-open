@@ -5,6 +5,7 @@
 import { MODELS } from "./agent";
 import { requireOwner } from "./scope";
 import { userTz } from "./suggest";
+import * as AiSet from "./aisettings";
 
 export type Rules = { daily_usd: number | null; monthly_usd: number | null; web: boolean; teach: boolean };
 /** A kid account's starting rules (an owner can change them). */
@@ -60,6 +61,7 @@ export async function spent(db: D1Database) {
 
 /** Why the next AI call can't happen, or null when it can. */
 export async function blocked(db: D1Database): Promise<string | null> {
+  if ((await AiSet.get(db)).mode === "off") return AiSet.OFF_MESSAGE;
   const [me, home, s] = await Promise.all([myRules(db), rulesFor(db, ""), spent(db)]);
   if (me.daily_usd !== null && s.today >= me.daily_usd) return `You've used today's AI allowance (${money(me.daily_usd)}). It starts again tomorrow.`;
   if (me.monthly_usd !== null && s.month >= me.monthly_usd) return `You've used this month's AI allowance (${money(me.monthly_usd)}). Ask the household's owner, or wait for next month.`;
