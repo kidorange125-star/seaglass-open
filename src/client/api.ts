@@ -95,6 +95,9 @@ export interface AiSetup {
   models: { id: string; label: string; blurb: string }[];
   keys: { name: string; label: string; example: string; source: "secret" | "saved" | null; saved: boolean; hint: string; updated_at: number | null }[];
 }
+/** Someone a page is shared with, and a page shared with you (sharing.ts). */
+export interface PagePerson { id: string; person_id: string; level: "view" | "edit"; display_name: string; username: string }
+export interface SharedWithMe { id: string; note_id: string; title: string; icon: string | null; level: "view" | "edit"; owner_name: string }
 export interface NewInvite { code: string; link: string; role: string; expires_at: number }
 export interface Household { mode: "individual" | "household"; name: string }
 export interface SessionInfo { ai?: { mode: "on" | "later" | "off"; connected: boolean }; authed: boolean; setup?: boolean; no_tables?: boolean; code_required?: boolean; code_set?: boolean; user?: Account | null; household?: Household }
@@ -151,6 +154,11 @@ export const api = {
   setRole: (id: string, role: "adult" | "owner" | "kid") => call<{ ok: boolean }>(`/api/household/members/${id}`, { method: "PATCH", body: j({ role }) }),
   resetPassword: (id: string, password: string) => call<{ ok: boolean }>(`/api/household/members/${id}/password`, { method: "POST", body: j({ password }) }),
   usage: () => call<MyUsage>("/api/usage"),
+  pagePeople: (id: string) => call<PagePerson[]>(`/api/notes/${id}/people`),
+  sharePage: (id: string, person: string, level: "view" | "edit") => call<PagePerson[]>(`/api/notes/${id}/people/${person}`, { method: "PUT", body: j({ level }) }),
+  unsharePage: (id: string, person: string) => call<PagePerson[]>(`/api/notes/${id}/people/${person}`, { method: "DELETE" }),
+  sharedWithMe: () => call<SharedWithMe[]>("/api/shared-with-me"),
+  shareInfo: () => call<{ id: string; level: "view" | "edit"; root_id: string; title: string; icon: string | null; owner_name: string }>("/api/share-info"),
   setupAi: () => call<AiSetup>("/api/setup/ai"),
   saveAiSettings: (p: Partial<AiSetup["settings"]>) => call<AiSetup["settings"]>("/api/setup/ai", { method: "PUT", body: j(p) }),
   saveKey: (name: string, value: string) => call<{ ok: boolean }>(`/api/setup/keys/${name}`, { method: "PUT", body: j({ value }) }),

@@ -34,8 +34,8 @@ import { Dialogs } from "./components/ui";
 import { bootDone } from "./boot";
 import { JoinHousehold, SignIn } from "./components/Welcome";
 import { Onboarding } from "./components/Onboarding";
-import { setAi, setHome, setMe, showAssistant } from "./me";
-import { inFamily } from "./space";
+import { setAi, setHome, setMe, setShare, shareInfo, showAssistant } from "./me";
+import { inFamily, inShare, spaceHref } from "./space";
 import { CalendarView } from "./components/CalendarView";
 
 function Shell() {
@@ -119,6 +119,8 @@ function Shell() {
       <FocusTimer />
       <OfflineBadge />
       <main className="main">
+        {/* A page someone shared with you: whose it is, what you can do, and the way back (phones have no tab bar here). */}
+        {inShare && <div className="share-bar" role="note"><span>Shared by {shareInfo()?.owner_name || "someone"} · {shareInfo()?.level === "edit" ? "You can edit" : "View only"}</span><a href={spaceHref(false)}>Back to my space</a></div>}
         {!s.sidebarOpen && <button className="open-sb ghost icon-btn" title="Open sidebar (Ctrl+\)" aria-label="Open sidebar" onClick={s.toggleSidebar}><IMenu /></button>}
         {/* Phones: pushed screens get a back chevron instead of the menu button (Apple HIG navigation bars). */}
         {s.route.kind !== "home" && <button className="nav-back ghost icon-btn" aria-label="Back" onClick={s.goBack}><IChevronLeft size={26} /></button>}
@@ -126,7 +128,7 @@ function Shell() {
       </main>
       {s.peekId && <aside className="peek" aria-label="Side peek"><PageView key={s.peekId} id={s.peekId} peek /></aside>}
       {/* Phones: with Liquid Glass it's a floating capsule (Home, Jeff, New) plus Search in its own circle, like iOS 26. */}
-      <nav className="tabbar" aria-label="Main">
+      {!inShare && <nav className="tabbar" aria-label="Main">
         <div className="tb-pill">
           <span className="tb-sel" aria-hidden hidden={tabSel < 0} style={{ "--i": Math.max(0, tabSel) } as CSSProperties} />
           <a href="#/" className={tabSel === 0 ? "on" : ""}><IHome size={24} /><span>Home</span></a>
@@ -143,7 +145,7 @@ function Shell() {
           <button onClick={() => void s.newPage()}><ICompose size={24} /><span>New</span></button>
         </div>
         <button className="tb-search" aria-label="Search" onClick={() => s.setPaletteOpen(true)}><ISearch size={24} /><span>Search</span></button>
-      </nav>
+      </nav>}
       {!s.agentOpen && showAssistant() && <button className="jeff-fab" title={`Ask ${agentName()} (Ctrl+J)`} onClick={() => s.setAgentOpen(true)}><JeffAvatar size={40} />{unread > 0 && <span className="fab-badge">{unread}</span>}</button>}
       {s.pick && <StudyPick key={`${s.pick.kind}-${s.pick.id}`} target={s.pick} />}
       {s.studyId && <StudyView key={JSON.stringify(s.studyId)} target={s.studyId} />}
@@ -177,6 +179,7 @@ export function App() {
     if (r.setup) { setCodeRequired(!!r.code_required); setNoTables(!!r.no_tables); setView("setup"); }
     else if (r.authed && r.user && (await forgetOtherPerson(r.user.id))) location.reload(); // someone else used this device last
     else if (inFamily && r.authed && r.household?.mode !== "household") location.href = location.pathname; // no Family space outside a household
+    else if (inShare && r.authed && !(await api.shareInfo().then((x) => { setShare(x); if (!/^#\/p\//.test(location.hash)) location.hash = `#/p/${x.root_id}`; return true; }, () => false))) location.href = spaceHref(false); // shared no longer
     else { setMe(r.user); setHome(r.household); setAi(r.ai); if (inFamily) document.documentElement.dataset.space = "family"; setView(r.authed ? "app" : joinCode() ? "join" : "signin"); }
   }).catch((e) => {
     if (e instanceof ApiError && e.status === 503 && e.message === "no_data_key") setView("nokey");

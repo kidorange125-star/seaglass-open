@@ -63,6 +63,7 @@ export async function removeMember(env: Env, id: string) {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(id),
     env.DB.prepare("DELETE FROM person_rules WHERE person_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM page_shares WHERE owner_id = ? OR person_id = ?").bind(id, id),
     env.DB.prepare("UPDATE invites SET used_by = NULL WHERE used_by = ?").bind(id),
     env.DB.prepare("DELETE FROM users WHERE id = ?").bind(id),
   ]);

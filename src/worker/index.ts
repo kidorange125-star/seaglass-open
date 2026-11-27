@@ -36,9 +36,10 @@ import { FAMILY, SPACE_PREFIX, familyAllows } from "../shared/space";
 import * as Files from "./files";
 import * as Usage from "./usage";
 import * as Keys from "./keys";
+import * as Sharing from "./sharing";
 import * as AiSet from "./aisettings";
 import { registerHousehold, registerJoin } from "./household";
-import { asPerson, asSystem, ownerOf, people } from "./scope";
+import { asPerson, asSystem, ownerOf, people, requireOwner } from "./scope";
 import { agentCtx } from "./identity";
 import { registerAuthorize } from "./authorize";
 import { authMode, claudeClient, issuerUrl, openidConfiguration, publicJwks, wifMissing } from "./claude-auth";
@@ -60,6 +61,14 @@ app.use("/api/*", async (c, next) => {
   // Backups and encryption upkeep cover everyone's data, so only the household's owner can run or download them.
   if (/^\/api\/(backups|security)(\/|$)/.test(c.req.path) && u.role !== "owner") return c.json({ error: "Only the household's owner can do this." }, 403);
   if (AiSet.AI_ROUTE.test(c.req.path) && (await AiSet.get(c.env.DB)).mode === "off") return c.json({ error: AiSet.OFF_MESSAGE }, 403);
+  if (c.env.SHARE) {
+    // A page someone shared with this person: only that branch, only what its level allows (sharing.ts).
+    const g = await Sharing.gate(c as never, u);
+    if ("stop" in g) return g.stop;
+    await next();
+    if (g.after) c.res = await g.after(c.res);
+    return;
+  }
   if (c.env.SPACE === FAMILY) {
     // The shared Family space: for everyone in a household, and only for pages, databases, tasks and the calendar.
     if ((await household(c.env.DB)).mode !== "household") return c.json({ error: "The Family space is for households. Switch to a household in Settings first." }, 403);
@@ -660,6 +669,26 @@ app.delete("/api/setup/keys/:name", async (c) => {
   return c.json({ ok: true });
 });
 
+// Sharing a page with someone in the household (sharing.ts): the owner's side, and the list of what's shared with you.
+app.get("/api/notes/:id/people", async (c) => c.json(await Sharing.forPage(c.env.DB, requireOwner(c.env.DB), c.req.param("id"))));
+app.put("/api/notes/:id/people/:person", async (c) => {
+  const me = requireOwner(c.env.DB), person = c.req.param("person"), id = c.req.param("id");
+  const level = (await body<{ level?: unknown }>(c)).level;
+  if (level !== "view" && level !== "edit") return c.json({ error: "Pick view or edit." }, 400);
+  if (person === me) return c.json({ error: "It's already yours." }, 400);
+  if (!(await c.env.DB.prepare("SELECT 1 FROM users WHERE id = ?").bind(person).first())) return c.json({ error: "not found" }, 404);
+  const n = await N.getNote(c.env.DB, id);
+  if (!n) return c.json({ error: "not found" }, 404);
+  await Sharing.setShare(c.env.DB, me, id, person, level);
+  return c.json(await Sharing.forPage(c.env.DB, me, id));
+});
+app.delete("/api/notes/:id/people/:person", async (c) => {
+  const me = requireOwner(c.env.DB);
+  await Sharing.unshare(c.env.DB, me, c.req.param("id"), c.req.param("person"));
+  return c.json(await Sharing.forPage(c.env.DB, me, c.req.param("id")));
+});
+app.get("/api/shared-with-me", async (c) => c.json(await Sharing.sharedWith(c.env, requireOwner(c.env.DB))));
+
 // AI usage (usage.ts): your own, and for owners everyone's totals (numbers only) and the limits they set.
 app.get("/api/usage", async (c) => c.json(await Usage.mine(c.env.DB)));
 
@@ -854,6 +883,8 @@ async function mayOpenFile(env: Env, obj: R2Object, id: string, url: string, coo
   if (viewer?.id === owner) return true;
   // A file in the shared Family space opens for anyone signed in to this household.
   if (owner === FAMILY && viewer) return true;
+  // A file on a page its owner shared with the viewer.
+  if (viewer && (await Sharing.fileShared(env, owner, viewer.id, `/files/${id}/`))) return true;
   const shared = (await env.DB.prepare("SELECT id, html, cover FROM notes WHERE owner_id = ? AND share_slug IS NOT NULL AND deleted_at IS NULL /*any-owner*/").bind(owner).all<{ id: string; html: string | null; cover: string | null }>()).results;
   const needle = `/files/${id}/`;
   for (const n of shared) {
@@ -1042,6 +1073,13 @@ export default {
       url.pathname = `/api/${url.pathname.slice(SPACE_PREFIX.length + 1)}`;
       request = new Request(url, request);
       sys = { ...sys, SPACE: FAMILY };
+    }
+    // A page shared with this person: /api/s/share/<share id>/<route> (sharing.ts checks it in the middleware below).
+    const shared = /^\/api\/s\/share\/([0-9a-f-]{36})\/(.+)$/.exec(url.pathname);
+    if (shared) {
+      url.pathname = `/api/${shared[2]}`;
+      request = new Request(url, request);
+      sys = { ...sys, SHARE: shared[1] };
     }
     // Until a request says who it's for, the database is the system's, which can't reach anyone's personal things.
     return providerFor(base).fetch(request, sys, ctx);

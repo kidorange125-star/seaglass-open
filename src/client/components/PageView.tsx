@@ -1,4 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { SharePeople } from "./SharePeople";
+import { awayFromMine, inShare } from "../space";
+import { isHousehold } from "../me";
 import { extractCards } from "../study/cards";
 import { setWeakSpotsOn, weakSpotsOn } from "../study/weak";
 import { TaskSteps } from "./TaskSteps";
@@ -133,15 +136,18 @@ export function PageView({ id, peek = false }: { id: string; peek?: boolean }) {
           {status === "saving" ? "Saving…" : status === "offline" ? "Saved on this device, will sync" : status === "error" ? "Couldn't save, will retry" : status === "conflict" ? "Changed elsewhere" : `Edited ${timeAgo(note.updated_at)}`}
         </span>
         <div className="actions">
+          {!inShare && (
           <div className="rel">
             <button className={`ghost share-btn ${note.share_slug ? "on" : ""}`} onClick={() => setPop(pop === "share" ? null : "share")}>{note.share_slug ? <><IGlobe size={16} /> Shared</> : "Share"}</button>
             {pop === "share" && (
               <Popover onClose={() => setPop(null)} className="share-pop">
+                {!awayFromMine && isHousehold() && <SharePeople pageId={id} toast={store.toast} />}
                 <label className="switch"><input type="checkbox" checked={!!note.share_slug} onChange={async (e) => { const enabled = e.target.checked; await flush(); const r = await api.share(id, enabled); edit({ share_slug: r.share_slug }); }} /> Publish to the web</label>
                 {shareUrl ? <><input readOnly value={shareUrl} onFocus={(e) => e.target.select()} /><button onClick={() => { void navigator.clipboard?.writeText(shareUrl); store.toast("Link copied"); }}>Copy link</button><p className="muted">Anyone with the link can read this page. Turn it off to unpublish.</p></> : <p className="muted">Create a public, read-only link to this page.</p>}
               </Popover>
             )}
           </div>
+          )}
           {note.kind !== "database" && !locked && isInkDevice() && !ink && <button className="ghost icon-btn tb-pen" title="Write by hand (Apple Pencil or finger)" aria-label="Write by hand" onClick={() => dispatchEvent(new CustomEvent("seaglass:ink", { detail: { end: true } }))}><IPencil /></button>}
           <button className={`ghost icon-btn tb-wide ${panel === "comments" ? "on" : ""}`} title="Comments" onClick={() => setPanel(panel === "comments" ? null : "comments")}><IComment /></button>
           <button className={`ghost icon-btn tb-wide ${panel === "history" ? "on" : ""}`} title="Version history" onClick={() => setPanel(panel === "history" ? null : "history")}><IClock /></button>
