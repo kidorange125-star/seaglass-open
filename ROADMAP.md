@@ -33,6 +33,13 @@ What's planned for Seaglass Open, roughly in order. Nothing here exists yet unle
 - Share a page and its sub-pages with one person in the household, to view or to edit (a page's Share menu > People).
   They find it under "Shared with me" and see nothing else of yours; edits show who made them in version history.
 
+## 0.2.4: importing from other apps (done)
+
+- Settings > Import from other apps brings in Notion (Markdown & CSV export, databases included), Obsidian vaults and
+  Markdown folders, Apple Notes (Apple's data copy, or text, HTML or Markdown files), Google Keep (Takeout) and Evernote
+  (.enex). Links between notes, pictures, files, checklists, tags and dates come along, into one new page that can be
+  moved or deleted in one step. The export is read on the device; see [docs/IMPORTING.md](docs/IMPORTING.md).
+
 ## Later in 0.2.x
 
 - A comment-only level once comments say who wrote them; reminders for Family tasks.
@@ -50,7 +57,7 @@ What's planned for Seaglass Open, roughly in order. Nothing here exists yet unle
 - Updates from inside the app: Settings > About shows a new release; Update brings your copy up to date and deploys it,
   backing up and applying database changes first. Stable and Beta channels.
 - The boot screen says what's happening while Seaglass sets up or updates.
-- Import from Notion, Obsidian and Markdown, Apple Notes, Google Keep and Evernote; export everything any time.
+- Export everything any time in formats other apps read (Markdown and HTML), not only as a Seaglass backup.
 - A "try it first" demo household; starter sets (student, family, writer).
 - A printable recovery kit for the owner (the encryption key and a way back in).
 

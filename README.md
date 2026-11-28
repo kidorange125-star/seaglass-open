@@ -31,6 +31,8 @@ This is **Seaglass Open**, the open-source edition, released under the [Apache L
 - **A Family space**: shared pages, Family tasks and a calendar for the household, next to everyone's private space.
 - **Share a page with one person**: to view or to edit, from the page's Share menu. They see that page and its sub-pages,
   nothing else.
+- **Bring your notes with you**: import from Notion (databases too), Obsidian, Markdown folders, Apple Notes, Google Keep
+  and Evernote, with links, pictures, checklists and dates (Settings > Import from other apps).
 - **Kid accounts**: the assistant teaches instead of doing homework, with no web search and a small daily AI allowance
   unless a parent changes them.
 - **AI usage you can see and cap**: what each person and feature costs, with daily and monthly limits (Settings > AI
@@ -38,8 +40,8 @@ This is **Seaglass Open**, the open-source edition, released under the [Apache L
 
 ## What's not in it yet
 
-Seaglass Open is new (0.2). Next come other AI providers besides Claude, importers (Notion, Obsidian and more) and
-updating from inside the app. See the [roadmap](ROADMAP.md).
+Seaglass Open is new (0.2). Next come other AI providers besides Claude and updating from
+inside the app. See the [roadmap](ROADMAP.md).
 
 ## Run your own
 
