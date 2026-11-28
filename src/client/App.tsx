@@ -12,6 +12,7 @@ import { StudyChat } from "./components/StudyChat";
 import { FocusTimer, ReviewView } from "./components/StudyTools";
 import { CaptureDialog, takeShared, VoiceDialog } from "./components/CaptureTools";
 import { BackupDialog } from "./components/BackupDialog";
+import { ImportDialog } from "./components/ImportDialog";
 import { OfflineBadge } from "./components/OfflineBadge";
 import { forgetOtherPerson, isNetworkError, startOfflineSync, warmCache } from "./offline";
 import { agentName, syncPersona, usePersona } from "./persona";
@@ -157,6 +158,7 @@ function Shell() {
       {s.photoOpen && <PhotoNotesDialog />}
       {s.captureOpen && <CaptureDialog />}
       {s.backupOpen && <BackupDialog />}
+      {s.importOpen && <ImportDialog />}
       {s.voiceOpen && <VoiceDialog />}
       {s.explain && <ExplainView key={s.explain.nonce} target={s.explain} />}
       {s.quiz && <QuizView key={`${s.quiz.join()}-${s.quizResume}`} ids={s.quiz} replay={s.quizReplay ?? undefined} resume={s.quizResume} />}

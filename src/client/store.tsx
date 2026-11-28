@@ -57,6 +57,7 @@ interface Store {
   captureOpen: boolean; setCaptureOpen: (v: boolean) => void;
   /** Settings > Backups. */
   backupOpen: boolean; setBackupOpen: (v: boolean) => void;
+  importOpen: boolean; setImportOpen: (v: boolean) => void;
   voiceOpen: boolean; setVoiceOpen: (v: boolean) => void;
   /** Practice test on these pages (full screen), or null. */
   quiz: string[] | null; setQuiz: (ids: string[] | null, replay?: TestQuestion[], resume?: boolean) => void;
@@ -116,6 +117,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [photoOpen, setPhotoOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [quiz, setQuizIds] = useState<string[] | null>(null);
   const [quizReplay, setQuizReplay] = useState<TestQuestion[] | null>(null);
@@ -241,7 +243,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     studyId, setStudy, drill, setDrill, studyChat, setStudyChat,
     memoryOpen, setMemoryOpen, proactiveOpen, setProactiveOpen,
     notifyOpen, setNotifyOpen,
-    photoOpen, setPhotoOpen, quiz, setQuiz, quizReplay, quizResume, explain, setExplain, past, setPast, pick, setPick, liveVoice, setLiveVoice, captureOpen, setCaptureOpen, backupOpen, setBackupOpen, voiceOpen, setVoiceOpen,
+    photoOpen, setPhotoOpen, quiz, setQuiz, quizReplay, quizResume, explain, setExplain, past, setPast, pick, setPick, liveVoice, setLiveVoice, captureOpen, setCaptureOpen, backupOpen, setBackupOpen, importOpen, setImportOpen, voiceOpen, setVoiceOpen,
     openTask: (id) => { if (route.kind === "tasks") setPeek(id); else { pendingPeek.current = id; location.hash = "/tasks"; } },
     recents, tasksDbId, eventsDbId,
     agentOpen, setAgentOpen: (v) => { setAgentOpenState(v); write("sg.agent", v ? "1" : "0"); },

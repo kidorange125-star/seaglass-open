@@ -37,6 +37,7 @@ import * as Files from "./files";
 import * as Usage from "./usage";
 import * as Keys from "./keys";
 import * as Sharing from "./sharing";
+import * as Importer from "./importer";
 import * as AiSet from "./aisettings";
 import { registerHousehold, registerJoin } from "./household";
 import { asPerson, asSystem, ownerOf, people, requireOwner } from "./scope";
@@ -519,6 +520,13 @@ app.get("/api/export", async (c) => {
   return c.json(await N.exportAll(c.env.DB));
 });
 app.post("/api/import", async (c) => c.json(await N.importAll(c.env.DB, await body(c))));
+// Importing from other apps: the browser reads the export and sends pages here in order (worker/importer.ts). One run id
+// for the whole import comes from the browser, so its pages show together in history.
+app.post("/api/import/pages", async (c) => {
+  const b = await body<{ pages?: unknown; root?: unknown; run_id?: unknown }>(c);
+  const runId = typeof b.run_id === "string" && /^[0-9a-f-]{36}$/.test(b.run_id) ? b.run_id : crypto.randomUUID();
+  return c.json(await Importer.makePages(c.env.DB, b.pages, b.root, { ...ctx(c), runId }));
+});
 
 // ---------------------------------------------------------------- agent + runs (undo / redo)
 // The agent streams newline-delimited JSON events. Every change it makes is logged under one run id,

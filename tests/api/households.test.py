@@ -110,6 +110,8 @@ writes = [
     ("DELETE", f"/api/routines/{rid}", None),
     ("POST", "/api/runs/undo", {}),
     ("POST", "/api/import", {"notes": [{"id": a1, "title": "pwned by B", "html": ""}]}),
+    ("POST", "/api/import/pages", {"pages": [{"id": a1, "parent_id": None, "title": "pwned by B"}]}),
+    ("POST", "/api/import/pages", {"pages": [{"id": str(uuid.uuid4()), "parent_id": a1, "title": "B's import"}]}),
     ("DELETE", f"/api/notes/{a1}", None),
     ("DELETE", f"/api/notes/{a1}/purge", None),
     ("DELETE", f"/api/study-subjects/{sid}", None),

@@ -174,6 +174,7 @@ export function Sidebar() {
       <button onClick={() => { setSettings(null); s.setCaptureOpen(true); }}><IPlus size={S} /> Quick capture</button>
       <button onClick={() => { setSettings(null); s.setBackupOpen(true); }}><IShield size={S} /> Backups</button>
       <button onClick={async () => { setSettings(null); const d = await api.exportAll(); const url = URL.createObjectURL(new Blob([JSON.stringify(d, null, 2)], { type: "application/json" })); const a = document.createElement("a"); a.href = url; a.download = `seaglass-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click(); }}><IDownload size={S} /> Export full backup</button>
+      {!inShare && <button onClick={() => { setSettings(null); s.setImportOpen(true); }}><IUpload size={S} /> Import from other apps</button>}
       <button onClick={() => fileRef.current?.click()}><IUpload size={S} /> Import backup</button>
       <div className="mp-sep" />
       <button onClick={async () => {
