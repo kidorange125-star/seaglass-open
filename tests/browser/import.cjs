@@ -35,8 +35,10 @@ const named = (t, parent, title) => t.find((n) => n.parent_id === parent && n.ti
   const orphan = await note(kid);
   check(orphan.parent_id === root0 && !/script/.test(orphan.html) && orphan.created_at === 1_500_000_000_000, "a page whose parent is missing goes in the import's page, sanitized, with its own date", orphan);
   check((await j("GET", `/api/notes/${kid}/history`)).body.length >= 1, "and it's in version history");
-  const big = await j("POST", "/api/import/pages", { root: root0, pages: [{ id: crypto.randomUUID(), parent_id: root0, title: "Huge", html: "<p>" + "word ".repeat(50_000) + "</p>".repeat(1) + "<p>" + "x".repeat(900_000) + "</p>" }] });
-  check(big.body.made === 1 && big.body.cut.includes("Huge"), "a page too long is kept in part and said so", big.body);
+  const hugeId = crypto.randomUUID();
+  const big = await j("POST", "/api/import/pages", { root: root0, pages: [{ id: hugeId, parent_id: root0, title: "Huge", html: Array.from({ length: 2000 }, () => `<p>${"字".repeat(120)}</p>`).join("") }] });
+  const huge = await note(hugeId);
+  check(big.body.made === 1 && big.body.cut.includes("Huge") && /too long to import/.test(huge.html) && new Blob([huge.html]).size <= 600_000, "a page too big in bytes (240,000 characters, 720 KB) is kept in part and said so", [big.body, new Blob([huge.html || ""]).size]);
   await j("DELETE", `/api/notes/${root0}`);
 
   const b = await chromium.launch();
@@ -138,6 +140,18 @@ const named = (t, parent, title) => t.find((n) => n.parent_id === parent && n.ti
     check(/Apples<br ?\/?>Pears/.test(g.html) && !/Groceries/.test(g.html) && /href="https:\/\/example.com\/list"/.test(g.html), "text keeps its lines and links, without repeating the title", g.html);
     const ph = await note(named(t, recipes.id, "Photo note").id);
     check(/<img[^>]*src="\/files\//.test(ph.html) && !/data:image/.test(ph.html) && !/<h1>/.test(ph.html), "a picture written into an HTML note becomes an uploaded file", ph.html.slice(0, 300));
+  }
+
+  // ---- 61 notes: several requests; a long page in Chinese is cut by bytes, the rest all arrive
+  {
+    const { text, t, root } = await run("Markdown", [f("big-vault.zip")]);
+    const kids = kidsOf(t, root.id);
+    const long = kids.find((n) => n.title === "Long");
+    const ln = long && await note(long.id);
+    check(kids.length === 61 && /Imported 61 pages/.test(text), "61 notes arrive over several requests", [kids.length, text.slice(0, 120)]);
+    check(ln && /too long to import/.test(ln.html) && /这是一个很长的段落/.test(ln.html) && /1 thing couldn.t come along/.test(text), "a long page in Chinese is cut by its size in bytes, and the dialog says so", text.slice(-200));
+    const n5 = await note(named(t, root.id, "Note 05").id);
+    check(new RegExp(`data-id="${named(t, root.id, "Note 06").id}"`).test(n5.html), "links between notes in different requests still point at each other");
   }
 
   // ---- loose Markdown files, then Undo

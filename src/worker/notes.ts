@@ -237,7 +237,7 @@ export interface CreateInput {
   title?: string; html?: string; parent_id?: string | null; kind?: string; icon?: string | null;
   cover?: string | null; props?: unknown; db_schema?: unknown; is_template?: boolean; template_id?: string;
   position?: number; id?: string;
-  /** When it was first written and last changed elsewhere (importers keep a note's own dates). Never in the future. */
+  /** When it was first written and last changed elsewhere: createMany only (importers keep a note's own dates). Never in the future. */
   created_at?: number; updated_at?: number;
 }
 const pastTime = (v: unknown, t: number) => (typeof v === "number" && Number.isFinite(v) && v > 0 && v <= t ? Math.floor(v) : null);
@@ -266,7 +266,7 @@ export async function createNote(db: D1Database, input: CreateInput, ctx: Ctx) {
     db_schema: jsonField(input.db_schema, tpl?.db_schema ?? null), deleted_at: null,
   } satisfies Snap;
 
-  await db.batch(await insertStmts(db, id, row, input, ctx, t));
+  await db.batch(await insertStmts(db, id, row, {}, ctx, t)); // dates of its own only through createMany (importers)
   return (await getNote(db, id))!;
 }
 

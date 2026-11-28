@@ -7,8 +7,11 @@ import * as N from "./notes";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const MAX_PAGES = 25;
-/** A page's HTML is kept under this, so the sealed copy (and its history entry) stay under D1's 2 MB per value. */
-export const MAX_HTML = 900_000;
+/** A page's HTML is kept under this many UTF-8 bytes: sealed (about 4/3 bigger) with its plain text beside it, the row
+ *  stays under D1's 2 MB, and so does its history entry. */
+export const MAX_HTML = 600_000;
+const enc = new TextEncoder();
+const bytes = (s: string) => enc.encode(s).length;
 
 export type ImportPage = {
   id: string; parent_id: string | null; title?: string; html?: string; icon?: string | null; kind?: string;
@@ -17,8 +20,9 @@ export type ImportPage = {
 
 /** Cuts very long HTML at the last whole block that fits, and says so at the end of the page. */
 export function fit(html: string): { html: string; cut: boolean } {
-  if (html.length <= MAX_HTML) return { html, cut: false };
-  const room = html.slice(0, MAX_HTML - 200);
+  if (html.length <= MAX_HTML / 4 || bytes(html) <= MAX_HTML) return { html, cut: false };
+  let room = html.slice(0, Math.floor(html.length * (MAX_HTML - 300) / bytes(html)));
+  while (bytes(room) > MAX_HTML - 300) room = room.slice(0, Math.floor(room.length * 0.95));
   const end = Math.max(...["</p>", "</li>", "</ul>", "</ol>", "</h1>", "</h2>", "</h3>", "</table>", "</div>", "</blockquote>", "</pre>"].map((t) => { const i = room.lastIndexOf(t); return i < 0 ? -1 : i + t.length; }));
   return { html: `${end > 0 ? room.slice(0, end) : ""}<p><em>The rest of this page was too long to import.</em></p>`, cut: true };
 }

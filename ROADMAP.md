@@ -40,6 +40,11 @@ What's planned for Seaglass Open, roughly in order. Nothing here exists yet unle
   (.enex). Links between notes, pictures, files, checklists, tags and dates come along, into one new page that can be
   moved or deleted in one step. The export is read on the device; see [docs/IMPORTING.md](docs/IMPORTING.md).
 
+## 0.2.5: sturdier imports (done)
+
+- A group of pages that can't be saved is tried again in smaller parts, so one page never stops an import; very long
+  pages are measured in bytes (so long pages in any language fit); dates can be set only by an import.
+
 ## Later in 0.2.x
 
 - A comment-only level once comments say who wrote them; reminders for Family tasks.
