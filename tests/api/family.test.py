@@ -77,6 +77,11 @@ check("a Family upload opens for everyone in the household", ffile and bee("GET"
 s, t = ana("POST", "/api/upload", raw=PNG, ctype="image/png"); afile = (j(t) or {}).get("url", "")
 check("...but Ana's own upload still doesn't", bee("GET", afile)[0] == 404)
 
+# ---- importing from other apps into the Family space (worker/importer.ts)
+rid, kid = str(uuid.uuid4()), str(uuid.uuid4())
+s, t = ana("POST", f"{F}/import/pages", {"root": rid, "pages": [{"id": rid, "parent_id": None, "title": "Imported " + MARK}, {"id": kid, "parent_id": rid, "title": "Inside", "html": "<p>x</p>"}]})
+check("an import goes into the Family space, for everyone", s == 200 and (j(t) or {}).get("made") == 2 and kid in bee("GET", f"{F}/tree")[1] and kid not in ana("GET", "/api/tree")[1], (s, t))
+
 # ---- undo works on the Family space's own changes
 check("undo in the Family space", ana("POST", f"{F}/runs/undo", {})[0] == 200)
 

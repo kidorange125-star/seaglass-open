@@ -9,7 +9,7 @@ export const SPACE_PREFIX = "/api/s/family";
 /** [method, path] pairs that work in the Family space. Paths are the normal /api/... ones. */
 const ROUTES: [string, RegExp][] = [
   ["GET", /^\/api\/(tree|recent|home|search|changes|trash|runs)$/],
-  ["POST", /^\/api\/(notes|upload|tasks\/ensure|calendar\/ensure|runs\/undo|runs\/redo)$/],
+  ["POST", /^\/api\/(notes|upload|import\/pages|tasks\/ensure|calendar\/ensure|runs\/undo|runs\/redo)$/],
   ["DELETE", /^\/api\/trash$/],
   ["GET", /^\/api\/notes\/[0-9a-f-]{36}(\/(children|backlinks|comments|history|history\/[\w-]+))?$/],
   ["PATCH", /^\/api\/notes\/[0-9a-f-]{36}$/],

@@ -65,6 +65,7 @@ for p in ("/search?q=" + SECRET, "/recent", "/home", "/trash", "/runs", "/export
     s, t = bee("GET", SB + p)
     check(f"not through a share: {p.split('?')[0]}", s in (403, 404) and SECRET not in t, (s, t[:120]))
 check("the assistant can't be reached through a share", bee("POST", f"{SB}/agent", {"message": "mock:create x", "history": []})[0] == 403)
+check("importing through a share is refused", bee("POST", f"{SB}/import/pages", {"root": trip, "pages": [{"id": str(uuid.uuid4()), "parent_id": trip, "title": "x"}]})[0] == 403)
 check("changes through a share say nothing", (j(bee("GET", f"{SB}/changes?since=1")[1]) or {}).get("changes") == [])
 
 # ---- editing

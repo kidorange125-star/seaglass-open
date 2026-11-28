@@ -332,6 +332,7 @@ export const api = {
   unfurl: (url: string) => call<{ url: string; title: string; description: string; image: string; host: string }>(`/api/unfurl?url=${encodeURIComponent(url)}`),
   exportAll: () => call<unknown>("/api/export"),
   importAll: (data: unknown) => call<{ notes: number }>("/api/import", { method: "POST", body: j(data) }),
+  importPages: (pages: unknown[], root: string, run_id: string) => call<{ made: number; failed: { id: string; title: string; error: string }[]; cut: string[] }>("/api/import/pages", { method: "POST", body: j({ pages, root, run_id }) }),
 
   async upload(file: File | Blob, name = (file as File).name || "file") {
     const res = await fetch(`/api/upload?name=${encodeURIComponent(name)}`, { method: "POST", body: file, headers: { "Content-Type": file.type } });

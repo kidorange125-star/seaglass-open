@@ -237,7 +237,10 @@ export interface CreateInput {
   title?: string; html?: string; parent_id?: string | null; kind?: string; icon?: string | null;
   cover?: string | null; props?: unknown; db_schema?: unknown; is_template?: boolean; template_id?: string;
   position?: number; id?: string;
+  /** When it was first written and last changed elsewhere (importers keep a note's own dates). Never in the future. */
+  created_at?: number; updated_at?: number;
 }
+const pastTime = (v: unknown, t: number) => (typeof v === "number" && Number.isFinite(v) && v > 0 && v <= t ? Math.floor(v) : null);
 
 export async function createNote(db: D1Database, input: CreateInput, ctx: Ctx) {
   await guardAi(db, ctx, input.parent_id, input.template_id);
@@ -263,17 +266,71 @@ export async function createNote(db: D1Database, input: CreateInput, ctx: Ctx) {
     db_schema: jsonField(input.db_schema, tpl?.db_schema ?? null), deleted_at: null,
   } satisfies Snap;
 
+  await db.batch(await insertStmts(db, id, row, input, ctx, t));
+  return (await getNote(db, id))!;
+}
+
+/** The statements that create one page: the row, its links, its history entry and the change feed. */
+async function insertStmts(db: D1Database, id: string, row: Snap, input: Pick<CreateInput, "created_at" | "updated_at">, ctx: Ctx, t: number) {
   const log = await logStmts(db, ctx, "create", id, null, row, t);
-  const sv = await sealedNote(id, { ...row, text: toText(html) });
-  await db.batch([
+  const sv = await sealedNote(id, { ...row, text: toText(row.html) });
+  const born = pastTime(input.created_at, t) ?? t, edited = Math.max(born, pastTime(input.updated_at, t) ?? born);
+  return [
     db.prepare(
       `INSERT INTO notes (owner_id, id,parent_id,kind,title,html,text,icon,cover,favorite,position,full_width,small_text,font,locked,is_template,props,db_schema,meta,system,dated,revision,created_at,updated_at)
        VALUES ({owner}, ?,?,?,?,?,?,?,?,0,?,?,?,?,0,?,?,?,?,?,?,1,?,?)`,
-    ).bind(id, row.parent_id, row.kind, sv.title, sv.html, sv.text, sv.icon, sv.cover, row.position, row.full_width, row.small_text, row.font, row.is_template, sv.props, sv.db_schema, sv.meta, systemOf(row.kind, row.db_schema), datedOf(row.props), t, t),
-    ...linkStmts(db, id, html),
+    ).bind(id, row.parent_id, row.kind, sv.title, sv.html, sv.text, sv.icon, sv.cover, row.position, row.full_width, row.small_text, row.font, row.is_template, sv.props, sv.db_schema, sv.meta, systemOf(row.kind, row.db_schema), datedOf(row.props), born, edited),
+    ...linkStmts(db, id, row.html),
     ...log,
-  ]);
-  return (await getNote(db, id))!;
+  ];
+}
+
+/**
+ * Creates many pages in ONE database batch (importers: Cloudflare's free plan allows 50 database calls per request, and a
+ * batch counts as one). Parents come first; a parent is either earlier in the list or an existing page that isn't locked
+ * or trashed. A page whose parent is neither goes under `fallback` when given. Each page is logged like createNote's.
+ * Returns the ids made and the ones refused, with why. All or nothing: if the batch fails, nothing was made.
+ */
+export async function createMany(db: D1Database, inputs: (CreateInput & { id: string })[], ctx: Ctx, fallback?: string | null) {
+  const t = now();
+  const outside = [...new Set(inputs.map((i) => i.parent_id).filter((p): p is string => !!p)).add(fallback ?? "")].filter(Boolean);
+  const look = [...new Set([...outside, ...inputs.map((i) => i.id)])];
+  const known = new Map<string, { locked: number; deleted_at: number | null }>();
+  for (let i = 0; i < look.length; i += 90) {
+    const part = look.slice(i, i + 90);
+    for (const r of (await db.prepare(`SELECT id, locked, deleted_at FROM notes WHERE owner_id = {owner} AND (id IN (${part.map(() => "?").join(",")}))`).bind(...part).all<{ id: string; locked: number; deleted_at: number | null }>()).results) known.set(r.id, r);
+  }
+  const usable = (id: string) => { const k = known.get(id); return !!k && !k.locked && !k.deleted_at; };
+  const tops = new Map<string | null, number>();
+  const parents = [...new Set(inputs.map((i) => i.parent_id ?? null).concat(fallback ?? null))];
+  const inDb = parents.filter((p): p is string => !!p && known.has(p));
+  for (let i = 0; i < inDb.length; i += 90) {
+    const part = inDb.slice(i, i + 90);
+    for (const r of (await db.prepare(`SELECT parent_id, MAX(position) AS m FROM notes WHERE owner_id = {owner} AND (parent_id IN (${part.map(() => "?").join(",")})) GROUP BY parent_id`).bind(...part).all<{ parent_id: string; m: number }>()).results) tops.set(r.parent_id, r.m ?? 0);
+  }
+  if (parents.includes(null)) tops.set(null, (await db.prepare("SELECT COALESCE(MAX(position),0) AS m FROM notes WHERE owner_id = {owner} AND (parent_id IS NULL)").first<{ m: number }>())?.m ?? 0);
+  const made = new Set<string>(), refused: { id: string; error: string }[] = [], stmts: D1PreparedStatement[] = [];
+  for (const input of inputs) {
+    if (known.has(input.id) || made.has(input.id)) { refused.push({ id: input.id, error: "a page with this id already exists" }); continue; }
+    let pid = input.parent_id ?? null;
+    if (pid && !made.has(pid) && !usable(pid)) {
+      if (fallback && (made.has(fallback) || usable(fallback))) pid = fallback;
+      else { refused.push({ id: input.id, error: known.get(pid)?.locked ? "page is locked" : "parent not found" }); continue; }
+    }
+    const position = (tops.get(pid) ?? 0) + 1;
+    tops.set(pid, position);
+    const kind = KINDS.has(input.kind ?? "") ? (input.kind as "page" | "database") : "page";
+    const html = cleanHtml(input.html ?? "");
+    const row = {
+      parent_id: pid, kind, title: clip(input.title, 300), html, icon: input.icon ?? null, cover: input.cover ?? null, favorite: 0, position,
+      full_width: 0, small_text: 0, font: "sans", locked: 0, is_template: 0, props: jsonField(input.props, "{}") ?? "{}",
+      db_schema: kind === "database" ? jsonField(input.db_schema, null) : null, deleted_at: null,
+    } satisfies Snap;
+    stmts.push(...await insertStmts(db, input.id, row, input, ctx, t));
+    made.add(input.id);
+  }
+  if (stmts.length) await db.batch(stmts);
+  return { made: [...made], refused };
 }
 
 export type Patch = Partial<Record<SnapKey, unknown>> & { revision?: number };
