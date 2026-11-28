@@ -101,6 +101,11 @@ zipit("icloud-notes.zip", {
     "iCloud Notes/Recipes/Photo note.html": f'<html><head><title>Photo note</title></head><body><h1>Photo note</h1><p>Look:</p><img src="data:image/png;base64,{base64.b64encode(PNG).decode()}"></body></html>',
 })
 
+# ---- a bigger vault: 60 notes (several requests), one of them long and not in English (bytes, not characters, decide)
+big = {f"Big/Note {i:02}.md": f"Note number {i}. Links to [[Note {(i + 1) % 60:02}]].\n" for i in range(60)}
+big["Big/Long.md"] = "\n\n".join("这是一个很长的段落，用来测试导入。" * 40 for _ in range(500))
+zipit("big-vault.zip", big)
+
 # ---- loose Markdown files
 open(os.path.join(out, "loose-one.md"), "w", encoding="utf-8").write("# Loose one\n\nSome **bold** words and a [link](https://example.com).\n\n| a | b |\n|---|---|\n| 1 | 2 |\n")
 open(os.path.join(out, "loose-two.md"), "w", encoding="utf-8").write("Links to [[loose-one]].\n")

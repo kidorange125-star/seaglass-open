@@ -23,8 +23,10 @@ Seaglass, the same way as if you'd typed them in. Nothing is sent to the AI.
   25 MB each at most. Anything else (Word files, for example) is listed at the end as not imported. Pictures written
   into a note (`data:` addresses) are saved as files, so pages stay small.
 - **Attachments no note shows** still come along, under a "Files" heading on the page of their folder.
-- **A very long page** (around 900,000 characters of HTML) is imported up to that point, with a note saying the rest
-  didn't fit, and it's listed at the end.
+- **A very long page** (over about 600 KB of text and formatting, which is a whole book) is imported up to that point,
+  with a note saying the rest didn't fit, and it's listed at the end.
+- **If a few pages can't be saved**, the rest still are: pages go in small groups, and a group that fails is tried again
+  in smaller parts, so only the page that can't be saved is left out (and listed).
 - **Things that can't come along** are listed at the end of the import, so nothing goes missing quietly.
 - **If an import stops part way**, you can remove what came in, or keep it.
 

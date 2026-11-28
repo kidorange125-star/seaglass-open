@@ -3,6 +3,7 @@
 // new page "Imported from …". Deleting that page (it goes to the trash) takes the whole import back.
 import { api } from "../api";
 import { esc, isImage } from "./convert";
+import { sendAll } from "./send";
 import { APPS, findFile, nameIndex, pageIndex, type ImpPage, type ImpSet, type Src } from "./sources";
 
 export type Progress = (step: string, done: number, total: number) => void;
@@ -15,7 +16,7 @@ const MIME: Record<string, string> = {
 };
 const mimeOf = (s: Src) => s.mime || MIME[(s.path.split(".").pop() ?? "").toLowerCase()] || "";
 const nameOf = (s: Src) => s.name || s.path.slice(s.path.lastIndexOf("/") + 1);
-const CHUNK = 25, MAX_BYTES = 4_000_000;
+const CHUNK = 25, MAX_BYTES = 1_500_000; // small requests: each is sanitized and sealed within one request's time
 
 async function pool<T>(items: T[], n: number, fn: (t: T) => Promise<void>) {
   let i = 0;
@@ -121,24 +122,21 @@ export async function runImport(set: ImpSet, progress: Progress, picked?: string
   const batches: (typeof send)[] = [];
   let cur: typeof send = [], bytes = 0;
   for (const b of send) {
-    const n = b.html.length + b.title.length + 500;
+    const n = new Blob([b.html]).size + b.title.length + 500;
     if (cur.length && (cur.length >= CHUNK || bytes + n > MAX_BYTES)) { batches.push(cur); cur = []; bytes = 0; }
     cur.push(b); bytes += n;
   }
   if (cur.length) batches.push(cur);
-  let made = 0, sent = 0;
+  let sent = 0;
   progress("Making pages", 0, send.length);
+  let r: Awaited<ReturnType<typeof sendAll>>;
   try {
-    for (const [i, batch] of batches.entries()) {
-      const r = await api.importPages(batch, rootId, runId);
-      if (i === 0 && r.failed.some((f) => f.id === rootId)) throw new Error(r.failed[0].error);
-      made += r.made;
-      for (const f of r.failed) skipped.push(`${f.title || "A page"}: ${f.error}`);
-      for (const t of r.cut) skipped.push(`${t}: too long, only the first part was imported`);
-      progress("Making pages", (sent += batch.length), send.length);
-    }
+    r = await sendAll(batches, (b) => api.importPages(b, rootId, runId), (n) => progress("Making pages", (sent += n), send.length), rootId);
   } catch (e) {
-    throw Object.assign(new Error((e as Error).message), { rootId: made ? rootId : null });
+    throw Object.assign(new Error((e as Error).message), { rootId: sent ? rootId : null });
   }
+  for (const f of r.failed) skipped.push(`${f.title || "A page"}: ${f.error}`);
+  for (const t of r.cut) skipped.push(`${t}: too long, only the first part was imported`);
+  const made = r.made;
   return { rootId, title, pages: made - 1, files: uploaded.size, skipped };
 }

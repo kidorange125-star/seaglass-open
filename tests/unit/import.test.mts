@@ -1,11 +1,13 @@
 // The importers' pure parts (client/import/): the zip reader (stored, deflated, zips inside zips, macOS junk skipped),
-// MD5 (Evernote finds pictures by it) and the Markdown helpers (front matter, Obsidian links, plain text).
+// MD5 (Evernote finds pictures by it), the Markdown helpers (front matter, Obsidian links, plain text), and sending in
+// batches that split when one fails.
 // The rest is DOM work, tested end to end in tests/browser/import.cjs.
 import { createHash } from "node:crypto";
 import { deflateRawSync } from "node:zlib";
 import { readZip, isZip } from "../../src/client/import/zip.ts";
 import { md5 } from "../../src/client/import/md5.ts";
 import { frontMatter, obsidian, plainText } from "../../src/client/import/convert.ts";
+import { sendAll, type Answer } from "../../src/client/import/send.ts";
 
 let fails = 0;
 const check = (ok: unknown, what: string, extra?: unknown) => { console.log(`${ok ? "ok  " : "FAIL"} ${what}${ok || extra === undefined ? "" : `  ${JSON.stringify(extra)}`}`); if (!ok) fails++; };
@@ -71,6 +73,31 @@ check(/<img data-imp-src="pic.png" alt="">/.test(o) && /<a data-imp-file="doc.pd
 check(/<mark>hi<\/mark>/.test(o) && /`\[\[code\]\]`/.test(o) && /\[\[block\]\]/.test(o), "highlights; code left alone");
 check(plainText("Title line\nsecond\n\nhttps://example.com/x.") === '<p>Title line<br>second</p><p><a href="https://example.com/x">https://example.com/x</a>.</p>', "plain text: paragraphs, line breaks, links", plainText("Title line\nsecond\n\nhttps://example.com/x."));
 check(plainText("<b>&</b>") === "<p>&lt;b&gt;&amp;&lt;/b&gt;</p>", "plain text is escaped");
+
+// ---- sending: a failed batch splits in half down to one page; the rest of the import goes on
+type P = { id: string; title: string };
+const pages = (n: number, from = 0): P[] => Array.from({ length: n }, (_, i) => ({ id: `p${from + i}`, title: `Page ${from + i}` }));
+const store = new Set<string>();
+const calls: number[] = [];
+const fake = (bad: Set<string>, lose = new Set<string>()) => async (b: P[]): Promise<Answer> => {
+  calls.push(b.length);
+  if (b.some((p) => bad.has(p.id))) throw new Error("request failed");          // like a batch over D1's limits: nothing written
+  const r: Answer = { made: 0, failed: [], cut: [] };
+  for (const p of b) { if (store.has(p.id)) r.failed.push({ ...p, error: "a page with this id already exists" }); else { store.add(p.id); r.made++; } }
+  if (b.some((p) => lose.has(p.id))) { b.forEach((p) => lose.delete(p.id)); throw new Error("answer lost"); } // written, but the answer never came
+  return r;
+};
+let done = 0;
+const r1 = await sendAll([pages(25), pages(10, 25)], fake(new Set(["p7"])), (n) => { done += n; });
+check(r1.made === 34 && r1.failed.length === 1 && r1.failed[0].id === "p7" && done === 35, "one bad page: the batch splits, the other 24 + 10 are made, it alone is skipped", { made: r1.made, failed: r1.failed, done });
+check(calls[0] === 25 && calls.includes(1), "it split down to one page", calls);
+store.clear(); calls.length = 0;
+const r2 = await sendAll([pages(4)], fake(new Set(), new Set(["p2"])), () => {});
+check(r2.made === 4 && !r2.failed.length, "a batch written but whose answer was lost counts its pages as made on the retry", r2);
+store.clear();
+let threw = "";
+try { await sendAll([pages(3)], fake(new Set(["p0"])), () => {}, "p0"); } catch (e) { threw = (e as Error).message; }
+check(threw === "request failed", "if the import's own page can't be made, the import stops", threw);
 
 console.log(fails ? `${fails} failed` : "all passed");
 process.exit(fails ? 1 : 0);
