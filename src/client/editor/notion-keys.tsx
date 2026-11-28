@@ -5,7 +5,7 @@ import { Extension, InputRule, markInputRule, type Editor } from "@tiptap/core";
 import { PluginKey, TextSelection, type EditorState } from "@tiptap/pm/state";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import Suggestion from "@tiptap/suggestion";
-import { suggestionRender, type SItem } from "./suggest";
+import { allowHere, suggestionRender, type SItem } from "./suggest";
 import { mentionItems, type EditorDeps } from "./extensions";
 import { EMOJI } from "../emoji";
 
@@ -122,7 +122,7 @@ export const NotionKeys = Extension.create<{ deps: EditorDeps }>({
     return [
       // [[ links a page, same menu as @.
       Suggestion<SItem, SItem>({
-        editor: this.editor, char: "[[", pluginKey: new PluginKey("pagelink"), allowedPrefixes: null, allowSpaces: true,
+        editor: this.editor, char: "[[", pluginKey: new PluginKey("pagelink"), allowedPrefixes: null, allowSpaces: true, allow: allowHere(),
         items: ({ query }) => mentionItems(deps, query.replace(/\]+$/, "")).filter((i) => i.group !== "Dates"),
         command: ({ editor, range, props }) => { void props.run(editor, range); },
         render: suggestionRender,

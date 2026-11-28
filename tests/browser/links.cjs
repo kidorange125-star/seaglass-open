@@ -1,6 +1,7 @@
 // Links in pages (editor/links.ts, LinkDialog.tsx): a click follows a link (a web address in a new tab, a Seaglass address
 // inside the app), the Link dialog gives a link its own words and address (from the toolbar, Ctrl+K and / Link), the link
-// card (Open / Edit / Remove), and the phone. Mock model, wiped database.
+// card (Open / Edit / Remove), the /, @ and [[ menus staying shut inside links and addresses, and the phone. Mock model,
+// wiped database.
 const { chromium } = require("playwright");
 const B = process.env.SEAGLASS_URL || "http://localhost:5173";
 let fails = 0;
@@ -108,6 +109,44 @@ const settle = async (id, want, ms = 8000) => { const t = Date.now(); let h = aw
   if (t2) await t2.close();
   await j("PATCH", `/api/notes/${page.id}`, { locked: false });
   check(!errs.length, `no page errors ${errs.join(" | ")}`);
+
+  // ---- the "/", "@" and "[[" menus: not inside a link or an address, gone when nothing matches
+  const menuShown = () => p.evaluate(() => { const m = document.querySelector(".suggest-pop"); return !!m && getComputedStyle(m).display !== "none"; });
+  const typing = (await j("POST", "/api/notes", { title: "Menus", html: "<p>x</p>" })).body;
+  await p.goto(`${B}/?n=${Date.now()}#/p/${typing.id}`, { waitUntil: "networkidle" });
+  await p.locator(".ProseMirror p").first().click();
+  await p.keyboard.press("End"); await p.keyboard.press("Backspace");
+  await p.keyboard.type("see apple.com/xc/product", { delay: 15 }); await p.waitForTimeout(250);
+  check(!(await menuShown()), "typing a web address with / in it opens no menu");
+  await p.keyboard.type(" and noah@gmail", { delay: 15 }); await p.waitForTimeout(250);
+  check(!(await menuShown()), "an email address doesn't open the @ menu");
+  await p.keyboard.type(" /", { delay: 15 }); await p.waitForTimeout(250);
+  check(await menuShown(), "a / after a space still opens the menu");
+  await p.keyboard.type("zzqqx", { delay: 15 }); await p.waitForTimeout(250);
+  check(!(await menuShown()), "a menu with no results goes away");
+  await p.keyboard.press("Escape");
+  await p.keyboard.type(" @", { delay: 15 }); await p.waitForTimeout(250);
+  check(await menuShown(), "an @ starting a word still opens the menu");
+  await p.keyboard.press("Escape");
+
+  // ---- a phone: the cursor at the end of a link (Edit from the link card) opens no menu over the Link dialog
+  {
+    const mm = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const pp = await mm.newPage();
+    await pp.addInitScript(() => { localStorage.setItem("sg.agent", "0"); });
+    const gift = (await j("POST", "/api/notes", { title: "Gifts", html: `<p>1: HomePod mini 2 - Midnight</p><p><a href="https://www.apple.com/xc/product/MGHJ4AM/A">https://www.apple.com/xc/product/MGHJ4AM/A</a></p>` })).body;
+    await pp.goto(`${B}/?n=${Date.now()}#/p/${gift.id}`, { waitUntil: "networkidle" });
+    await pp.locator(".ProseMirror a").first().waitFor();
+    await pp.evaluate(() => { const a = document.querySelector(".ProseMirror a"); a.closest(".ProseMirror").focus(); const r = document.createRange(); r.selectNodeContents(a); r.collapse(false); const s = getSelection(); s.removeAllRanges(); s.addRange(r); });
+    await pp.waitForTimeout(400);
+    const shown = () => pp.evaluate(() => { const m = document.querySelector(".suggest-pop"); return !!m && getComputedStyle(m).display !== "none"; });
+    check(!(await shown()), "the cursor at the end of a link ending in /A opens no menu");
+    await pp.evaluate(() => dispatchEvent(new CustomEvent("seaglass:link")));
+    await pp.locator(".link-dialog").waitFor(); await pp.waitForTimeout(300);
+    check(!(await shown()), "and nothing covers the Link dialog");
+    await pp.keyboard.press("Escape");
+    await mm.close();
+  }
 
   // ---- a phone: the dialog fits, its fields don't zoom the page
   const m = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
