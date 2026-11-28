@@ -2,6 +2,22 @@ import { forwardRef, useEffect, useImperativeHandle, useState, type ReactNode } 
 import { ReactRenderer, type Editor } from "@tiptap/react";
 import type { Range } from "@tiptap/core";
 import type { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion";
+import type { EditorState } from "@tiptap/pm/state";
+
+/**
+ * Where the "/", "@" and "[[" menus may open (they open after their character anywhere, as Notion's do): never inside a
+ * link, a web or email address or a path ("https://apple.com/xc/product/A" with the cursor after "/A" isn't a command),
+ * and with `afterWord` false only at the start of a word (so "noah@gmail.com" doesn't open the @ menu).
+ */
+export const allowHere = (afterWord = true) => ({ state, range }: { state: EditorState; range: Range }) => {
+  const link = state.schema.marks.link;
+  if (link && state.doc.rangeHasMark(range.from, Math.min(range.from + 1, state.doc.content.size), link)) return false;
+  const $from = state.doc.resolve(range.from);
+  const before = $from.parent.textBetween(Math.max(0, $from.parentOffset - 300), $from.parentOffset, " ", " ");
+  const word = /\S*$/.exec(before)?.[0] ?? "";
+  if (/[/@]|:\/\/|\w\.\w|^www\./i.test(word)) return false; // an address or a path; "here:" or "end." before it is fine
+  return afterWord || !word;
+};
 
 export interface SItem {
   key: string; title: string; subtitle?: string; icon?: ReactNode; group?: string; keywords?: string;
@@ -51,6 +67,8 @@ export function suggestionRender() {
     if (!r || !comp) return;
     const el = comp.element as HTMLElement;
     el.className = "suggest-pop";
+    // Nothing matches what was typed: no menu (as in Notion). With nothing typed yet, "No results" still says why.
+    el.style.display = p.items.length || !p.query.trim() ? "" : "none";
     el.style.left = `${Math.max(8, Math.min(r.left, innerWidth - 328))}px`;
     const h = Math.min(340, el.offsetHeight || 340);
     el.style.top = `${r.bottom + 8 + h > innerHeight ? Math.max(8, r.top - h - 8) : r.bottom + 8}px`;

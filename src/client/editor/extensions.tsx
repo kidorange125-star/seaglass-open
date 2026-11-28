@@ -56,7 +56,7 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import UniqueID from "@tiptap/extension-unique-id";
 import { common, createLowlight } from "lowlight";
 import { Bookmark, Callout, ChildPage, Column, Columns, DbView, FileBlock, Toc } from "./nodes";
-import { suggestionRender, type SItem } from "./suggest";
+import { allowHere, suggestionRender, type SItem } from "./suggest";
 import { NotionKeys } from "./notion-keys";
 import { api } from "../api";
 import type { TreeNode } from "../types";
@@ -191,7 +191,7 @@ export const Slash = Extension.create<{ deps: EditorDeps }>({
   addProseMirrorPlugins() {
     const items = slashItems(this.options.deps);
     return [Suggestion<SItem, SItem>({
-      editor: this.editor, char: "/", pluginKey: new PluginKey("slash"), allowedPrefixes: null, allowSpaces: true,
+      editor: this.editor, char: "/", pluginKey: new PluginKey("slash"), allowedPrefixes: null, allowSpaces: true, allow: allowHere(),
       items: ({ query }) => {
         const q = query.toLowerCase().trim();
         // Your saved prompts (Settings > Routines & saved prompts) run on this page in the assistant's chat.
@@ -272,7 +272,7 @@ export function buildExtensions(deps: EditorDeps) {
       renderText: ({ node }) => (String(node.attrs.id ?? "").startsWith("date:") ? `@${node.attrs.label}` : String(node.attrs.label ?? "")),
       renderHTML: ({ options, node }) => ["span", mergeAttributes({ "data-type": "mention" }, options.HTMLAttributes), String(node.attrs.id ?? "").startsWith("date:") ? `@${node.attrs.label}` : String(node.attrs.label ?? "")],
       suggestion: {
-        char: "@", pluginKey: new PluginKey("mention"), allowedPrefixes: null, allowSpaces: true,
+        char: "@", pluginKey: new PluginKey("mention"), allowedPrefixes: null, allowSpaces: true, allow: allowHere(false),
         items: ({ query }: { query: string }) => mentionItems(deps, query),
         command: ({ editor, range, props }: { editor: Editor; range: Range; props: SItem }) => { void props.run(editor, range); },
         render: suggestionRender,
